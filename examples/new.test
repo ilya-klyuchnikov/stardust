@@ -1,0 +1,24 @@
+# Newer
+
+#   The three examples from ICFP 2012
+test= dyn : +
+test= overload : +
+test= record : +
+
+# Older
+
+test= kennedy11 : +    # working as of 2012-10-24
+test= kennedy66 : +    # working as of 2013-02-10
+test= units : +    # working as of 2012-10-26
+test= mapfilter : +
+test= bool : +
+
+test= redblue : +
+
+test= restriction1 : +
+test= redblack : +
+
+test= refine : +
+test= leftanno1 : +
+test= leftanno2 : +
+test= leftanno3 : +

@@ -1,0 +1,76 @@
+Stardust Version 0.5
+2013-04-11
+
+WARNING
+
+This is a preliminary, badly documented release.  Not all features will work.  Even the included
+examples might not work.  The error messages are terrible.
+
+Nonetheless, I hope you may find it of interest.
+
+
+OVERVIEW
+
+If you just want installation instructions, see
+
+    install.html
+
+Stardust is a compiler for programs in a language called StardustML.
+Besides (roughly) the usual ML type system, it supports
+
+  - subtyping;
+  - datatypes indexed by integers, booleans, and dimensions/units of measure;
+  - datasort refinements (user-defined subtyping of datatypes);
+  - intersection types (&&);
+  - union types (//);
+  - guarded and asserting types;
+  - top and bottom (universal and empty) types;
+  - first-class parametric polymorphism (with probably-complete typechecking for higher-rank
+      predicative polymorphism, and annotation/hint-based typechecking of impredicative
+      uses of polymorphism)---however, see the caveat below;
+  - ad hoc polymorphism (intersection (&) and union (/) types without a refinement restriction).
+
+It does not support
+ 
+  - modules;
+  - fixity declarations (but does support the built-in SML infix operators, with their usual SML precedence);
+  - references;
+  - various rare or deprecated SML features, such as `abstype'.
+
+The Stardust type system is rather powerful, and type inference is undecidable.  Instead,
+Stardust uses bidirectional typechecking.  All `fun' declarations must be annotated with
+their type.  Occasionally, other expressions must be annotated.
+
+Type error messages in Stardust are both better and worse than in SML compilers.
+Bidirectional typechecking means that errors are reported earlier and closer to the
+"real problem", but intersection and union types mean that typechecking is a
+(nontrivial) search problem; a single expression may have to be checked several times
+in different contexts, and the typechecker must backtrack.  Currently, Stardust reports
+an error only from one "path" in this search space.  This can be quite confusing.
+
+Originally (in my thesis and the PLPV '07 paper), Stardust was intended to be a typechecker,
+not a compiler, and was meant to support a subset of Standard ML.  In particular, every valid
+Stardust program was also a syntactically valid Standard ML program, with Stardust-specific
+type annotations hidden inside (*[ ... ]*) brackets, which look like comments to Standard ML.
+
+In this version of Stardust, the source syntax is substantially different from Standard ML;
+most importantly, the syntax of type annotations is very different.  The syntax of types has
+also changed substantially since the PLPV '07 paper.  Finally, while Stardust has both
+"refinement" intersections like
+ 
+    (odd->even) && (odd->even)
+
+(where each part of the intersection is a refinement of the base type list->list) and
+unrestricted intersections like
+
+    (int * int -> int) & (real * real -> real)
+
+the two do not mix well, and Stardust is likely to crash or generate a bogus Standard ML
+program if you try.
+
+
+CAVEAT: FIRST-CLASS POLYMORPHISM
+
+Stardust claims to support first-class polymorphism (higher-rank, and even impredicative,
+polymorphism).  However, Stardust does not compile away first-class polymorphism,
+so in nearly all circumstances, you will not be able to compile the resulting program!

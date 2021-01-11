@@ -1,0 +1,39 @@
+(*
+ * Example of using dimensions as units.  This doesn't do any automatic conversion between
+ * different units of the same dimension, but given the perils of floating-point arithmetic,
+ * that's probably just as well.
+ *)
+
+(* Declare a new dimension "FT" *)
+indexconstant FT : dim
+
+(* Declare a value to introduce FT *)
+primitive val FT : real[FT] = "1.0"
+
+
+val metersPerFoot : real[M / FT]
+val metersPerFoot = (0.3048 * M) / FT
+
+
+val fromFeet : real[FT] -> real[M]
+fun fromFeet ft = ft * metersPerFoot
+
+val toFeet : real[M] -> real[FT]
+fun toFeet m = m / metersPerFoot
+
+
+val readDistance : real[NODIM] -> string -> real[M]
+fun readDistance number units =
+    case units of
+        "m" => number * M
+      | "ft" => fromFeet (number * FT)
+      | _ => raise BadInput ("unknown distance unit: "^units)
+
+
+val metersToString : real[M] -> string
+fun metersToString number =
+  Real.toString (number / M) ^ " m"
+
+
+val _ = print ("1000.0 ft = " ^ metersToString (readDistance 1000.0 "ft") ^ "\n")
+val _ = print ("10.0 m = " ^ metersToString (readDistance 10.0 "m") ^ "\n")

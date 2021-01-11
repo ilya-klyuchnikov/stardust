@@ -1,0 +1,35 @@
+(* Example of "invaluable refinements".
+   The refinement of `num' into `red' and `blue' is not based on values:
+   any closed value of type `num' can be checked against both `red' and `blue'. *)
+
+datatype num
+datasort num : red < num; blue < num; redblue < red; redblue < blue
+datacon Z : redblue
+datacon S : red -> red  &&  blue -> blue  &&  redblue -> redblue  &&  num  ->  num
+
+val redv = (Z : red)         (* Losing information *)
+val bluev = (Z : blue)     (* Losing information *)
+
+val f : red -> blue
+fun f x =
+    bluev
+
+val z1 : num
+val z1 = f redv
+
+(**
+  val z2 :! num
+  val z2 = f bluev
+**)
+
+val toRed : num -> red
+fun toRed num =
+  case num of
+      Z => Z
+    | S x => S (toRed x)
+
+val toBlue : num -> blue
+fun toBlue num =
+  case num of
+      Z => Z
+    | S x => S (toBlue x)

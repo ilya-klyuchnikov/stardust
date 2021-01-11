@@ -1,0 +1,12 @@
+val mul = Int.*
+val toString = Int.toString
+
+val mul = mul ,, Real.*    (* shadows earlier `mul' *)
+val toString = toString ,, Real.toString
+
+val square : (int -> int) & (real -> real)
+val square = fn x => x * x
+
+val _ = print (toString (mul (0.5, 300.0)) ^ "; ")
+val _ = print (toString (square 9) ^ "; ")
+val _ = print (toString (square 0.5) ^ "\n")

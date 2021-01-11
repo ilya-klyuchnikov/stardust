@@ -1,0 +1,39 @@
+datatype list
+datasort list : odd < list; even < list
+datacon Nil : even
+datacon Cons : int * odd -> even 
+           &&  int * even -> odd 
+
+val double_tail : (odd -> odd) && (even -> even) && (list -> list)
+fun double_tail xs =
+  let
+  in
+      case xs of
+          Nil => raise Match
+        | Cons (h, t) =>
+              let val tail : (t : odd >:> even,,
+                              t : even >:> odd)
+                  val tail =
+                          case t of
+                              Nil => raise Match
+                            | Cons (_, inner_t) => inner_t
+              in
+                  tail
+              end
+  end
+
+val print_list : list -> unit
+fun print_list xs =
+  case xs of
+    Nil => print "nil"
+  | Cons (h, t) => let in 
+                print (Int.toString h);
+                print "::";
+                print_list t
+            end
+
+val loss : list
+val loss = (Cons (1, Cons (2, Cons (3, Nil))))
+val q = double_tail loss
+val _ = print_list q
+val _ = print "\n\n"

@@ -1,0 +1,25 @@
+datatype list with nat
+
+datacon Nil : list[0]
+datacon Cons : -all u:nat-  int * list[u] -> list[u + 1]
+
+val map : -all a:nat-  (int -> int) -> list[a] -> list[a]
+fun map f xs =
+    case xs of
+        Nil => Nil
+      | Cons(y, ys) => Cons(f y, map f ys)
+
+
+val filter : -all a:nat- (int -> bool) -> list[a] -> -exists b:nat- list[b]
+
+fun filter f xs =
+         case xs of
+             Nil => Nil
+           | Cons(y, ys) => if f y then Cons(3333, filter f ys) else filter f ys
+
+val pred : int -> bool
+fun pred y = y < 3
+
+
+val mapfilterExample = map (fn x => x + 1000) Nil
+val mapfilterExample = map (fn x => x + 1000) (filter pred (Cons(1, Cons(2, Cons(3, Cons(4, Nil))))))

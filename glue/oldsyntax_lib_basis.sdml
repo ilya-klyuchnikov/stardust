@@ -1,0 +1,138 @@
+(* The "basis" "library" *)
+
+(*[
+(*
+  (* ----------- References ------------ *)
+  primitive type 'a ref = ('a -> unit) & (unit -> 'a]
+  primitive fun ref "ref"
+              : -all 'a- 'a -> 'a ref
+            = "(fn a => let val r = ref a in"
+              "            (fn a' => r := a,  fn () => !r)"
+              "          end)"
+*)
+
+  (* ----------- Index domain ----------- *)
+
+  indexconstant false : bool
+  indexconstant true : bool
+  indexconstant NODIM : dim    (* The only place NODIM should need to be written
+                                  is in this file, as the default index for type
+                                  `real', so its ugliness is not a problem. *)
+  indexconstant M : dim
+  indexconstant S : dim
+  indexconstant KG : dim
+
+  (* Index functions and predicates *)
+  indexfun + : int * int -> int
+  indexfun - : int * int -> int
+  indexfun * : int * int -> int,   dim * dim -> dim
+  indexfun / : int * int -> int,   dim * dim -> dim
+  indexfun ^ : dim * int -> dim
+  indexfun mod : int * int -> int
+
+  indexpred = : int * int,  bool * bool,  dim * dim
+  indexpred < : int * int
+  indexpred <= : int * int
+  indexpred > :! <= : int * int
+  indexpred >= :! < : int * int
+  indexpred <> :! = : int * int,  bool * bool,  dim * dim
+
+  (* ----------- Index refinements of primitive types   ----------- *)
+  primitive type int with int
+  primitive type real with dim = NODIM
+  primitive type string
+  
+  (* ----------- exit functions ----------- *)
+  primitive fun exit : int -> bot = "OS.Process.exit"
+  primitive fun elab_Bot : unit -> bot = "(fn () => OS.Process.exit 222)"
+  
+  (* ----------- Index refinement of `bool'   ----------- *)
+  datacon false : bool[false]
+  datacon true : bool[true]
+  datatype bool with bool
+  
+  (* ----------- Types of primitive values   ----------- *)
+  primitive val M : real[M] = "1.0"
+  primitive val S : real[S] = "1.0"
+  primitive val KG : real[KG] = "1.0"
+
+  (* ----------- Types of primitive functions   ----------- *)
+  primitive fun ^ "caret" : string * string -> string = "op^"
+  primitive fun Int.toString "Int_toString" : int -> string = "Int.toString"
+  primitive fun Real.toString "Real_toString" : real -> string = "Real.toString"
+  primitive fun Int.+ "Int_plus" : int * int -> int = "Int.+"
+  primitive fun Real.+ "Real_plus" : real * real -> real = "Real.+"
+  primitive fun Int.* "Int_star" : int * int -> int = "Int.*"
+  primitive fun Real.* "Real_star" : real *real -> real = "Real.*"
+
+  primitive fun + "plus" : (-all a, b : int- int[a] * int[b] -> int[a + b])
+                  & (-all d : dim- real[d] * real[d] -> real[d])
+                  = "(Int.+, Real.+)"
+  primitive fun - "minus" : (-all a, b : int- int[a] * int[b] -> int [a - b])
+                  & (-all d : dim- real[d] * real[d] -> real[d])
+                  = "(Int.-, Real.-)"
+
+  primitive fun * "star" :  (-all a, b : int- int[a] * int[b] -> int[a * b])
+                  & (-all a, b : int- {{a >= 0}}{{b >= 0}} int[a] * int[b]
+                                      -> -exists c : int- [c >= 0] int[c])
+                  & (-all d1, d2 : dim- real[d1] * real[d2] -> real[d1 * d2])
+                  = "((Int.*, Int.* ), Real.* )"
+
+  primitive fun div "div'" : int * int -> int (* -all a,b : int- int[a] * int[b] -> int[a div b] *)
+                  = "op div"
+  primitive fun / "slash" : -all d1, d2 : dim- real[d1] * real[d2] -> real[d1 / d2]
+                  = "op /"
+  primitive fun rem "rem'" : int * int -> int
+                  = "Int.rem"
+  primitive fun mod "mod'" : int * int -> int (* -all a,b : int- int[a] * int[b] -> int[a mod b] *)
+                  = "Int.mod"
+  primitive fun ~ "tilde" : (-all a : int- int[a] -> int[0 - a])
+                   & (-all d : dim- real[d] -> real[d])
+                  = "(Int.~, Real.~)"
+  primitive fun abs : (-all a : int- int[a] -> -exists b : int- [b >= 0] int[b])
+                   & (-all d : dim- real[d] -> real[d])
+                  = "(Int.abs, Real.abs)"
+  primitive fun < "lt"  : (-all a, b : int- int[a] * int[b] -> bool[a < b])
+                   & (-all d : dim- real[d] * real[d] -> bool)
+                  = "(Int.<, Real.<)"
+  primitive fun <= "le" : (-all a, b : int- int[a] * int[b] -> bool[a <= b])
+                   & (-all d : dim- real[d] * real[d] -> bool)
+                  = "(Int.<=, Real.<=)"
+  primitive fun > "gt"  : (-all a, b : int- int[a] * int[b] -> bool[a > b])
+                   & (-all d : dim- real[d] * real[d] -> bool)
+                  = "(Int.>, Real.>)"
+  primitive fun >= "ge" : (-all a, b : int- int[a] * int[b] -> bool[a >= b])
+                   & (-all d : dim- real[d] * real[d] -> bool)
+                  = "(Int.>=, Real.>=)"
+  primitive fun = "eq" : (-all a, b : int- int[a] * int[b] -> bool[a = b])
+                   & (-all a, b : bool- bool[a] * bool[b] -> bool[a = b])
+                   & (-all d : dim- real[d] * real[d] -> bool)
+                  = "(((op= : int * int -> bool),"
+                    " (op= : bool * bool -> bool)),"
+                    " Real.==)"
+  primitive fun <> "neq" : -all a, b : int- int[a] * int[b] -> bool[a <> b]
+                   = "(op<> : int * int -> bool)"
+  
+  primitive fun print : string -> unit = "TextIO.print"
+  
+  (* ----------- Subset sorts   ----------- *)
+  indexsort nat = {a:int | a >= 0}
+]*)
+
+datatype bool = false | true
+
+datatype exn = Match | Option | Subscript | Exn | Item_already_exists | NotFound
+             | BadInput of string
+
+datatype ('left, 'right) sum = Inl of 'left | Inr of 'right
+
+(*
+        (*[ val := :  -all 'a- 'a ref -> 'a -> unit ]*)
+        fun r := a =
+          r a
+
+
+        (*[ val ! : -all 'a- 'a ref -> 'a ]*)
+        fun ! r =
+          r ()
+*)

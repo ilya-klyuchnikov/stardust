@@ -1,0 +1,15 @@
+datatype list with nat
+datacon Nil : list[0]
+datacon Cons : -all a:nat- int * list[a] -> list[a + 1]
+
+val append : -all a, b:nat- list[a] * list[b] -> list[a + b]
+fun append (xs, ys) =
+  let
+     val app : (some c:nat.  ys:list[c] >:>  -all d:nat- list[d] -> list[c + d])
+     fun app xs =
+         case xs of
+             Nil => ys
+           | Cons(x, xs) => Cons(x, app xs)
+  in
+      app xs
+  end

@@ -1,0 +1,55 @@
+(* The example from the `Dependent types' subsection of Andrew Kennedy's
+   dissertation (page 66).
+
+   Inconsequentially modified because Stardust doesn't do numeric patterns.
+   Also, the dependent universal quantifier in Kennedy's proposed type corresponds
+   to an -all- plus an arrow.
+*)
+
+val power : -all d : dim- -all n : int- int[n] -> real[d] -> real[d^n]
+fun power n x =
+    if n = 0 then
+        1.0
+    else if n < 0 then
+        1.0 / power (~n) x
+    else
+        x * power (n-1) x
+
+(* Some buggy versions follow; the ":!" denotes a declaration that should *not* typecheck;
+   useful for testing *)
+
+val power_bug1 :! -all d : dim- -all n : int- int[n] -> real[d] -> real[d^n]
+fun power_bug1 n x =
+    if n = 0 then
+        1.0
+    else if n < 0 then
+        1.0 / power_bug1 (~n) x
+    else
+        x * x * power_bug1 (n-1) x  (* BUG *)
+
+val power_bug2 :! -all d : dim- -all n : int- int[n] -> real[d] -> real[d^n]
+fun power_bug2 n x =
+    if n = 0 then
+        1.0
+    else if n < 0 then
+        1.0 / power_bug2 (n-1) x   (* BUG *)
+    else
+        x * power_bug2 (n-1) x
+
+val power_bug3 :! -all d : dim- -all n : int- int[n] -> real[d] -> real[d^n]
+fun power_bug3 n x =
+    if n = 0 then
+        1.0
+    else if n < 0 then
+        1.0 / power_bug3 (~n) x
+    else
+        power_bug3 (n-1) x  (* BUG *)
+
+val power_bug4 : -all d : dim- -all n : int- int[n] -> real[d] -> real[d^n]
+fun power_bug4 n x =
+    if n = 0 then
+        1.0
+    else if n < 0 then
+        0.0 / power_bug4 (~n + 3) x      (* Two bugs, but well typed since zero has all dimensions *)
+    else
+        x * power_bug4 (n-1) x

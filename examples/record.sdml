@@ -1,0 +1,22 @@
+val get_xy : {x:int, y:int} -> int*int
+fun get_xy r =
+  (#x(r), #y(r))
+
+
+val tupleToString : int * int -> string
+fun tupleToString (x, y) =
+ "(" ^ Int.toString x ^ "," ^ Int.toString y ^ ")"
+
+val rec1 = {y = 11, x = 1} 
+val rec2 = {x = 2, y = 22, extra = 100}
+val rec3 = {x = 3, y = 33, other = "a string"}
+
+val _ = print ("get_xy rec1 = "
+             ^ tupleToString (get_xy rec1) ^ "\n")
+val _ = print ("get_xy rec2 = "
+             ^ tupleToString (get_xy rec2)
+             ^ " (extra = "
+             ^ Int.toString #extra(rec2) ^ ")\n")
+val _ = print ("get_xy rec3 = "
+           ^ tupleToString (get_xy rec3)
+           ^ " (other = " ^ #other(rec3) ^ ")\n")

@@ -1,0 +1,89 @@
+(* StardustML compiler
+   Copyright 2001-2013 Joshua Dunfield
+    
+   This program is free software: you can redistribute it and/or modify it under
+   the terms of the GNU General Public License as published by the Free Software
+   Foundation, either version 3 of the License, or (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful, but WITHOUT ANY
+   WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+   FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License along with this
+   program, in a file called COPYING. If not, see <http://www.gnu.org/licenses/>.
+*)
+Group 
+  signature STARDUSTRC
+  structure Stardustrc
+
+  signature DEBUG
+  structure Debug
+
+  signature TYPES
+  functor PiperFn
+  structure Piper
+  signature PIPER
+
+  functor   EnvFn
+  structure IntEnv
+  structure IntStatistEnv
+  structure StringEnv
+  structure PV      structure PVStatistEnv    structure PVEnv    structure PVExtra
+  structure TV     structure TVStatistEnv    structure TVEnv
+  structure TC     structure TCStatistEnv    structure TCEnv    structure TCExtra
+  structure IndexSym     structure IndexSymStatistEnv    structure IndexSymEnv
+  structure IndexSortSym     structure IndexSortSymStatistEnv    structure IndexSortSymEnv
+  structure IndexFieldName     structure IndexFieldNameStatistEnv    structure IndexFieldNameEnv
+
+  structure Types
+
+  signature BASIC
+  structure Basic
+  signature TIMING
+  structure Timing
+  signature MYLIST
+  structure MyList
+  signature SEPARATE
+  structure Separate
+  signature COUNTER
+  structure Counter
+  signature ASSOC
+  structure Assoc
+
+  signature SYMTAB
+  signature PRETTYPRINT
+  structure PrettyPrint
+  signature EQ
+  signature PR
+  signature EQ_PR
+  signature LOCATION
+  structure Location
+  structure Silly
+  structure Fixity
+  signature INDEXING
+  structure Indexing
+is
+#if defined(SMLNJ_VERSION)
+      $/basis.cm
+      ../nj-util/sources.cm
+      SillyNew.sml
+#else   (* MLton *)
+   SillyNew.sml    
+#endif
+  Env.sml
+  Fixity.sml
+  Functoritude.sml
+  Indexing.sml
+  Location.sml
+  Basic.sml
+  Timing.sml
+  MyList.sml
+  Assoc.sml
+  Counter.sml
+  Separate.sml
+  Piper.sml
+  Symtab.sml
+  Types.sml
+  pp.sml
+  Stardustrc.sml
+  Debug.sml

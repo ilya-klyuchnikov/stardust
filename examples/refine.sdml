@@ -1,0 +1,30 @@
+datatype list
+datasort list : odd < list; even < list
+datacon Nil : even
+datacon Cons : int * odd -> even 
+           &&  int * even -> odd 
+
+val p : int
+val p = 3
+
+val f : odd -> even & even -> odd
+val f = fn x => Cons(333, x)
+
+val q : odd -> even & even -> odd
+val q = fn y =>
+    case y of
+       Nil => Cons(333, Nil)
+     | Cons(_, tl) => tl
+
+
+val p : int
+val p = 3
+
+val f : odd -> even & even -> odd
+val f = fn x => Cons(333, x)
+
+val q : odd -> even & even -> odd
+val q = fn y =>
+    case y of
+       Nil => Cons(333, Nil)
+     | Cons(_, tl) => tl

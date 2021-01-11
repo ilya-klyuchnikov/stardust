@@ -1,0 +1,23 @@
+val bfalse1 = (3 < 2) : bool[false]
+val bfalse2 = (2 > 3)  : bool[false]
+val bfalse3 = (3 <= 2)  : bool[false]
+val bfalse4 = (2 >= 3)  : bool[false]
+val btrue1 = (2 >= 2) : bool[true]
+val btrue2 = (2 <= 2) : bool[true]
+val btrue3 = (2 <= 5) : bool[true]
+val btrue4 = (3 < 4) : bool[true]
+val btrue5 = (4 > 3) : bool[true]
+val bfalse5 = (4 <> 4)  : bool[false]
+val btrue6 = (4 <> 3) : bool[true]   (* ICS fails *)
+val bfalse6 = (4 = 3)  : bool[false]   (* ICS fails *)
+
+val btrue7 = (4 = 4) : bool[true]
+
+val bsnark8 = ((2 < 3) = true) : bool[true]
+val bsnark9 = ((2 < 3) = (111 < 2222)) : bool[true]
+
+val nonexh1 : unit
+val nonexh1 =
+       case (bfalse1, bfalse2, btrue3, btrue4, btrue5, bfalse6, btrue7) of
+           (false, false, true, true, true, false, true) => ()
+      (* exhaustive because of indexes in type of scrutinee *)

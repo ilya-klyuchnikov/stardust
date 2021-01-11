@@ -1,0 +1,1913 @@
+(* StardustML grammar *)
+(* Uses preprocessing directives removed by the `silly' script, *)
+(*  which you need to run by hand* after editing this file. *)
+
+(* * or with:
+   OS.Process.system "cd sdml;./silly";
+*)
+
+val {dprint, dprnt} =
+        Debug.register {full_name= "grammar",
+                        short_name= "grammar"}
+
+local
+    val index = Option.valOf (Debug.from "grammar")
+in
+    fun fail s =
+        Debug.makeFail index s
+end
+
+ 
+open Sdml 
+structure CC = Sdml.ConcreteContext
+structure F = Fixity
+structure X = Indexing
+
+val decslevel = ref 0
+
+fun mungeEnvForFwdRef env string =
+   ( (* print ("mungeEnvForFwdRef " ^ string ^ "\n"); *)
+     case ParseLib.Pvar.lookup_soft env string of
+       NONE => ()
+     | SOME (ParseLib.Ordvar (_, pvstatus as ref ParseLib.Neutral), pv) =>
+              let val _ = "Declared but undefined variable: this is a forward reference:"
+                  val _ = "  change it to `FutureFun'."
+                  val _ = dprnt "Neutral (---> FutureFun)"
+              in
+                  pvstatus := ParseLib.FutureFun
+              end
+     | SOME (ParseLib.Ordvar (_, ref ParseLib.FutureFun), pv) => dprnt "FutureFun"
+     | SOME (ParseLib.Ordvar (_, ref ParseLib.DefinedFun), pv) => dprnt "DefinedFun"
+     | SOME (ParseLib.Ordvar (_, ref ParseLib.DefinedVal), pv) => dprnt "DefinedVal"
+     | SOME (ParseLib.Convar, pv) => dprnt "Convar"
+   )
+
+(* Valid sequences of declarations:
+
+      anything of the form
+
+           val*  fun*  val*
+
+      with all other declarations arbitrarily interspersed.
+*)
+fun check_decs ds =
+    let
+        fun applyFix f x =
+           ( (* print (Print.p Print.printDecs x ^ "\n"); *)
+            case f x of
+                SOME x' => applyFix f x'
+              | NONE => x
+           )
+
+        fun rotateValsOverFuns [] = NONE
+          | rotateValsOverFuns ((d1 as (_, Dec(_, ValKW, _)))
+                                             :: (d2 as (_, Dec(_, FunKW, _)))
+                                             :: ds)
+            =
+              (SOME (d2 :: d1 :: ds))
+          | rotateValsOverFuns (d :: ds) =
+                let in
+                    case rotateValsOverFuns ds of
+                        NONE => NONE
+                      | SOME ds => SOME (d :: ds)
+                end
+        
+        fun check0 [] = []
+          | check0 ((d as (_, Dec(_,ValKW,_))) :: ds) = d :: check2 ds
+          | check0 ((d as (_, Dec(_,FunKW,_))) :: ds) = d :: check1 ds
+          | check0 (d :: ds) = d :: check0 ds
+
+        and check1 [] = []
+          | check1 ((d as (_, Dec(_,ValKW,_))) :: ds) = d :: check2 ds
+          | check1 ((d as (_, Dec(_,FunKW,_))) :: ds) = d :: check1 ds
+          | check1 (d :: ds) = d :: check1 ds
+
+        and check2 [] = []
+          | check2 ((d as (_, Dec(_,ValKW,_))) :: ds) = d :: check2 ds
+          | check2 ((d as (_, Dec(_,FunKW,_))) :: _) = raise Option
+          | check2 (d :: ds) = d :: check2 ds
+
+        val check = check0
+
+        val _ = dprint (fn () => Print.p Print.printDecs ds)
+        val rotated_ds = applyFix rotateValsOverFuns ds
+        val _ = dprint (fn () => Print.p Print.printDecs rotated_ds)
+    in
+        ((*check*) rotated_ds)
+        handle Option =>
+            (print ("Declarations invalid: `val' mixed with block of `fun's\n");
+             raise Option)
+    end
+
+fun var'n'fix env s errexp =
+    let val (info, pv) = ParseLib.Pvar.lookup errexp env s
+        val f = pv
+    in
+        (case info of
+             ParseLib.Convar => Con pv
+           | ParseLib.Ordvar _ => Var pv,
+             f)
+    end
+
+
+(* cf. Definition of Standard ML, p. 72, and
+   http://www.standardml.org/Basis/top-level-chapter.html
+*)
+fun fixityfn pv =
+    case PV.proper_name pv of
+        "*" => F.infixleft 7
+      | "/" => F.infixleft 7
+      | "div" => F.infixleft 7
+      | "mod" => F.infixleft 7
+
+      | "+" => F.infixleft 6
+      | "-" => F.infixleft 6
+      | "^" => F.infixleft 6
+
+      | "<" => F.infixleft 4
+      | ">" => F.infixleft 4
+      | "<=" => F.infixleft 4
+      | ">=" => F.infixleft 4
+      | "<>" => F.infixleft 4
+      | "=" => F.infixleft 4
+
+      | _ => F.NONfix
+
+
+fun unflatten locexps =
+    let fun applyFn ((loc1,e1), (loc2, e2)) =
+           let val loc = Location.span loc1 loc2
+           in
+               (loc,
+                let in case e1 of
+                    Con c => Conapp(c, (loc2,e2))
+                  | _ => App((loc1,e1), (loc2,e2))
+                end)
+           end
+
+        fun pairFn ((loc1,e1), (loc2,e2)) =
+              (Location.span loc1 loc2,
+               Tuple[(loc1,e1), (loc2,e2)])
+
+        val locexp = Precedence.parse PV.proper_name {apply= applyFn, pair= pairFn} (locexps, fixityfn)
+    in
+        locexp
+    end
+
+
+val X_var'n'fix = let
+fun X_var'n'fix env s errexp =
+    let val (iv, syminfo) = ParseLib.lookup_iv errexp env s
+(* val xxx = print ("`" ^ s ^ "' X_var'n'fix " ^ IndexSym.toString iv ^ "\n") *)
+        val f = iv (* case ParseLib.Pvar.lookup_soft env (IndexSym.toShortString iv) of
+            SOME (_, f) => f
+          | NONE => ~1 *)
+        val exp = case syminfo of 
+            X.IUVar _ => X.Uvar iv
+          | X.IEVar _ => X.Evar iv
+          | X.INil _ => X.Nil iv
+          | X.ITrue => X.True
+          | X.IFalse => X.False
+          | X.INODIM => X.NODIM
+          | X.IBaseDim => X.BaseDim iv
+          | X.IFun _ => X.Uvar iv  (* bogus? *)
+    in
+        (exp, f)
+    end
+in
+    X_var'n'fix : (ParseLib.env -> string -> (string -> unit) -> (Indexing.exp * IndexSym.sym))
+end
+
+fun X_fixityfn iv =
+    case IndexSym.toShortString iv of
+        "+" => F.infixleft 6
+      | "-" => F.infixleft 6
+      | "*" => F.infixleft 7
+      | "/" => F.infixleft 7
+      | "<" => F.infixleft 4
+      | ">" => F.infixleft 4
+      | "<=" => F.infixleft 4
+      | ">=" => F.infixleft 4
+      | "<>" => F.infixleft 4
+      | "=" => F.infixleft 4   (* XXX  don't have Definition with me right now; is this right? *)
+(*      | "/\\" => F.infixleft 3   (* XXX *)
+      | "\\/" => F.infixleft 3   (* XXX *)
+*)
+      | "^" => F.infixright 8   (* power; probably inconsistent with ^ operator in ML, but that's string concatenation, so who's counting? *)
+      | _ => F.NONfix
+
+fun X_unflatten exps =
+    let fun applyFn (e1, e2) =
+                let in case e1 of
+                    X.Uvar v => X.App(v, e2)
+                  | _ => (print ("X_unflatten dying on index expression ``" ^ X.Exp.toString e1 ^ "'' \n");
+                          raise Option)
+                end
+        val exp = Precedence.parse (IndexSym.toString) {apply= applyFn,
+                                       pair= fn (e1, e2) => (X.Tuple [e1, e2])
+                                     } (exps, X_fixityfn)
+    in
+        exp
+    end
+
+
+structure Stringdec = struct
+  datatype t =
+ (*   Dec of (string * PV.sym) * (ParseLib.env -> Sdml.locexp)
+  | *)
+    ValType of (string * PV.sym) * Dectype.dectype
+  | Datacon of (string * PV.sym) * (ParseLib.env -> Sdml.texp)
+  | TyvarVariance of string * Sdml.Variance.t
+  | DatatypeWith of string * Indexing.Sorting.t
+
+  type loct = Location.location * t
+  
+  fun getVariance defaultVariance tvname stringdecs =
+    let val self = getVariance defaultVariance tvname
+    in case stringdecs of
+        [] => defaultVariance
+      | (loc, TyvarVariance (tvname', variance)) :: rest => if tvname = tvname' then variance else self rest
+      | _ :: rest => self rest
+    end
+
+  fun getSorting tcname stringdecs = case stringdecs of
+     [] => X.Sorting.None
+   | (loc, DatatypeWith (tcname', sorting)) :: rest => if tcname = tcname' then sorting else getSorting tcname rest
+   | _ :: rest => getSorting tcname rest
+
+  fun frobDatacon env stringdec = case stringdec of 
+     (loc, Datacon ((string, pv), texpSusp)) => SOME (string, (pv, texpSusp env))
+   | _ => NONE
+
+  fun getValtypes stringdecs = List.mapPartial (fn (loc, ValType ((_, pv), dectype)) => SOME (loc, Sdml.ValType(pv, dectype))
+                                                                     | _ => NONE) stringdecs
+
+  fun getValtype stringdecs string =
+    let val matches = List.mapPartial (fn (loc, ValType ((string', pv), dectype)) =>
+                                                                                                 if string = string' then SOME (pv, dectype) else NONE
+                                                                                    | _ => NONE) stringdecs
+    in
+      case matches of
+         [] => NONE
+       | [onlyMatch] => SOME onlyMatch
+       | multipleMatches => fail ("Multiple type annotations for same val " ^ string)
+    end
+
+  val getValtype = getValtype : loct list -> string -> (PV.sym * Dectype.dectype) option
+end (* structure StringDec *)
+    
+
+fun buildSynonym env
+                                ((*typbind*) list : (TC.sym * (ParseLib.env -> (((string * TV.sym) list * texp)))) list)
+                                location
+=
+    let val (tcs, infos) = (ListPair.unzip list) :  TC.sym list * (ParseLib.env -> (((string * TV.sym) list * texp))) list
+        val (bindings, algFns) = ListPair.unzip
+                                     (List.map (fn (tc, entry) =>
+                                                   let val fresh_tv = TV.fresh (TC.toShortString tc)
+                                                   in
+                                                       ((TC.toShortString tc, ParseLib.TypeSynonym (tc, fresh_tv))
+                                                      ,
+                                                       fn env =>
+                                                          let val (params, texp) = entry env
+                                                              val (paramNames, paramTVs) = ListPair.unzip params
+                                                          in
+                                                              Sdml.Synonym{tc= tc,
+                                                                                       tv= fresh_tv,
+                                                                                       params= paramTVs,
+                                                                                       definition= texp}
+                                                          end
+                                                           )
+                                                       end)
+                                               list)
+        val withTCs = ParseLib.Type.extend env bindings
+        val typedecs = List.map (fn f => f withTCs) algFns
+        val result = [(location, Typedec typedecs)] : decs
+    in
+        (withTCs, result)
+        :
+        ParseLib.env * decs
+    end
+
+%%
+%verbose
+
+%pos int
+
+%name Sdml
+
+%nonassoc WITHTYPE
+%right HANDLE COMMA AND DARROW
+%left SEMICOLON RBRACE  MINUS  AMP DBLAMP        RAISE ANDALSO ORELSE DBLCOLON ELSE
+%right ARROW
+%left EQUALOP PLUS ASTERISK RBRACK SLASH DBLSLASH DQUESTION
+%nonassoc COLON
+
+%term
+     EOF 
+   | ID of string | TYVAR of string
+   | INT of string
+   | REAL of string
+   | STRING of string
+   | CHAR of string
+      
+   | AND | ANDALSO | AS
+   | CASE
+   | DATACON | DATASORT | DATATYPE
+   | DO
+   | ELSE | END
+   | FN | FUN
+   | HANDLE
+   | IF | IN
+   | INDEXCONSTANT | INDEXFUN | INDEXPRED | INDEXSORT
+   | LET | LETHINT | LOCAL
+   | NOT
+   | OF | OP | ORELSE
+   | PRIMITIVE
+   | RAISE | REC
+   | TESTSUBTYPE
+   | THEN | TRY | TYPE
+   | UNIT 
+   | VAL
+   | WHERE | WITH | WITHTYPE
+   
+   | ANTICOLON
+   | APOSTROPHE
+   | ARROW
+   | ASTERISK
+   | BAR
+   | COLON
+   | COMMA
+   | DARROW
+   | DBLCOLON
+   | DBLCOMMA
+   | DQUESTION
+   | EQUALOP   (* var. EQUALOP *)
+   | HASH
+   | LBRACE | RBRACE   
+   | LBRACK | RBRACK
+   | LPAREN | RPAREN
+   | MINUS
+   | PLUS
+   | SEMICOLON
+   | TURNSTILE
+   | WILD
+
+   | SOME     (* "some" *)
+   | PERIOD    (* "." *)
+   | LEFTANNO   (* >:> *)
+   
+   | TOP | BOT
+   | AMP | SLASH
+   | DBLAMP | DBLSLASH
+   | DASHALL | DASHEXISTS
+
+
+  
+%nonterm tcname of string
+       | id of string
+       | idcon of string
+       | idw of string
+       | optionalsemicolon of unit
+       | in_or_notin of Sdml.testsubtype_sense
+       | program of ParseLib.env * decs -> ParseLib.env * program
+
+       | typbind of (TC.sym * (ParseLib.env -> (string * TV.sym) list * texp)) list
+       | AND_typbind_opt of (TC.sym * (ParseLib.env -> (string * TV.sym) list * texp)) list
+       | variancesymbol of Sdml.Variance.t
+       | nativename of string option
+       | indexrecordspec of ParseLib.env -> ParseLib.env * (X.fieldname * X.Sorting.spec) list
+       | indexspec of ParseLib.env -> ParseLib.env * X.Sorting.t
+       | defaultindexspec of ParseLib.env -> X.exp option
+
+       | dec of ParseLib.env -> (ParseLib.env * decs)
+       | decs of ParseLib.env -> (ParseLib.env * decs)
+(*       | decsunchecked of ParseLib.env -> (ParseLib.env * decs) *)
+
+(*       | trailer of (pos * pos) * ParseLib.env -> locexp
+*)
+       | synonymtypbind of ParseLib.env -> ParseLib.env * decs
+
+       | valdec of ParseLib.env -> ParseLib.env * locdec list
+       | valtypedec of ParseLib.env -> ParseLib.env * locdec
+       | fdec of ParseLib.env -> ParseLib.env * locdec
+       | fdef of ParseLib.env -> locexp
+
+       | colonoranticolon of Sdml.annotation -> Dectype.dectype
+
+(* 
+0    exp  ::=  expA | fn x => exp
+10   expA ::= expB | expA ,, expB
+15   expB ::= expC | d >:> expB 
+20   expC ::= expD | case expD of (... => expD)*
+40   expD ::= expI | expI ; expD
+60   expI ::=  expR | if expR then expI else expI
+70   expR ::= raise expS | expS (andalso expS)* | expS (orelse expS)*
+                                (eventually; right now, just expS andalso expS | expS orelse expS)
+80     expS ::= expZ | expZ : annotation | ?? expZ | try exp handle id => exp end
+100   expZ ::= app_exp
+100   app_exp                       
+*)
+       | exp of ParseLib.env -> locexp
+       | expA of ParseLib.env -> locexp
+       | expB of ParseLib.env -> locexp
+       | expC of ParseLib.env -> locexp
+       | expD of ParseLib.env -> locexp
+       | expI of ParseLib.env -> locexp
+       | expR of ParseLib.env -> locexp
+       | expS of ParseLib.env -> locexp
+       | expZ of ParseLib.env -> locexp
+       | recordexp_component of ParseLib.env -> locexp
+       | recordexp_component_list of ParseLib.env -> locexp list
+       | record_component of ParseLib.env -> ParseLib.env * texp
+       | record_component_list of ParseLib.env -> ParseLib.env * (texp list)
+       | exp_2c of (ParseLib.env -> locexp) list
+       | exp_list of (ParseLib.env -> locexp) list
+#if 0
+       | exp_ps of ParseLib.env -> locexp
+#endif
+       | app_exp of ParseLib.env -> (locexp, PV.sym) fixitem list
+       | aexp of ParseLib.env -> locexp
+       | arms of (ParseLib.env -> arm) list
+       | arm of ParseLib.env -> arm
+       | pattern of ParseLib.env -> ParseLib.env * pattern
+       | patternl of ParseLib.env -> ParseLib.env * pattern list
+       | patternlz of ParseLib.env -> ParseLib.env * pattern list
+       | atpattern of ParseLib.env -> ParseLib.env * pattern
+(*
+       | atpatternl of ParseLib.env -> ParseLib.env * pattern list
+*)
+       | stringseq of string
+       | stringopt of string option
+       | idl of string list
+
+       | ids of string list
+(*
+       | exp_2comma_leftassoc of ParseLib.env -> locexp list
+*)
+       | proposition of ParseLib.env -> X.constraint
+       | tyvarseq of string list
+       | tyvarvariance of string * Sdml.Variance.t
+       | tyvarvarianceseq of (string * Sdml.Variance.t) list
+       | tyvars of string list
+(* texp  ::= -all- texp  |  texpI
+   texpI  ::= texpC & ...
+   texpC ::= texpD -> ...
+   texpD ::= -exists- [P] ... texpE
+   texpE ::= texpU * ...
+   texpU ::= texpY \/ ...
+   texpY ::= {{P}} texp | {record} | texpZ
+   texpZ ::= atomictexp texpl         (texpl may be empty)
+   atomictexp ::= tycon indexrefinement | () | top | bot | ( texp )
+*)
+       | texp of ParseLib.env -> (ParseLib.env * texp)
+       | texpI of ParseLib.env -> (ParseLib.env * texp)
+       | texpC of ParseLib.env -> (ParseLib.env * texp)
+       | texpD of ParseLib.env -> (ParseLib.env * texp)
+       | texpE of ParseLib.env -> (ParseLib.env * texp list)
+       | texpU of ParseLib.env -> (ParseLib.env * texp)
+       | texpY of ParseLib.env -> (ParseLib.env * texp)
+       | texpZ of ParseLib.env -> (ParseLib.env * texp)
+       | atomictexp of ParseLib.env -> (ParseLib.env * texp)
+
+       | dashalltail of ParseLib.env -> (ParseLib.env * texp)
+
+       | texpl of ParseLib.env -> (ParseLib.env * texp list)
+(*
+       | texps of ParseLib.env -> (ParseLib.env * texp list)
+*)
+
+       | commaids of string list
+       | commatyvars of string list
+       | indexrefinement of ParseLib.env -> X.record
+(*
+       | indexfield of ParseLib.env -> (IndexFieldName.sym * X.exp)
+       | indexfields of ParseLib.env -> (IndexFieldName.sym * X.exp) list
+*)
+
+       | sort of ParseLib.env -> X.sort
+       | sort0 of ParseLib.env -> X.sort
+       | sprodel of ParseLib.env -> X.sort list
+
+       | X_exp of ParseLib.env -> X.exp
+       | X_appexp of ParseLib.env -> (X.exp, IndexSym.sym) fixitem list
+       | X_aexp of ParseLib.env -> X.exp
+       | X_exp_2c of (ParseLib.env -> X.exp) list
+       | X_explist0 of (ParseLib.env -> X.exp) list
+       | X_explist of ParseLib.env -> X.exp
+
+(*
+       | typedec of ParseLib.env -> (string * Dectype.dectype)
+       | typedeczzz of ParseLib.env -> Dectype.dectype
+*)
+       | datasortpair of string * string
+       | datasortpairs of (string * string) list
+       | primdec of ParseLib.env -> ParseLib.env
+       | complement of ParseLib.env -> IndexSym.sym option
+       | indexfunctioncomponent of ParseLib.env -> {domain:X.sort, range:X.sort, complement:IndexSym.sym option}
+       | indexfunctionspec of ParseLib.env -> {domain:X.sort, range:X.sort, complement:IndexSym.sym option} list
+       | indexpredspec of ParseLib.env -> {domain:X.sort} list
+(* ITRS '12-style *)
+       | annotationtype of ParseLib.env -> ParseLib.env * annotype
+       | annotationtypelist of ParseLib.env -> ParseLib.env * annotype list
+(* Contextual typing annotations *)
+(*
+       | ccelem of ParseLib.env -> ParseLib.env * ConcreteContext.elem
+       | ccelemlist of ParseLib.env -> ParseLib.env * ConcreteContext.elem list
+       | concrete_ctxt of ParseLib.env -> ParseLib.env * concrete_ctxt
+       | typing of ParseLib.env -> typing
+       | typinglist of ParseLib.env -> typing list
+*)
+       | ctxanno of ParseLib.env -> annotation
+
+
+%arg (argument) : (pos * pos -> string -> unit) * (pos -> pos -> Location.location) * (pos -> pos -> Sdml.exp -> Sdml.locexp)
+
+%start program
+%eop EOF
+%noshift EOF
+
+
+%%
+
+#if 0
+   was:  program: decs trailer
+#endif
+program: decs      (decslevel := 0; (
+                                 fn (env, library_decs) =>
+                                   let val _ = decslevel := 0
+                                       val (env, decs') = decs env
+#if 0
+(*                                       val _ = print ("length of bestowed_algsl = " ^ Int.toString (List.length bestowed_algsl) ^ "\n") *)
+#endif
+#if 0
+                                       val trailerexp = trailer ((trailerleft, trailerright), env)
+#endif
+                                       val trailerexp = locify decsright decsright (Tuple [])
+#if 0
+                                       fun fab_exp [] = trailerexp
+                                         | fab_exp (ds::rest) = locify decsleft decsright (Let (ds, fab_exp rest))
+#endif
+                                       val locexp = locify decsleft decsright (Let (library_decs @ decs', trailerexp))
+                                   in
+                                         (env, Program (ParseLib.get_libinfo env,
+                                                        [],
+                                                        locexp))
+                                   end))
+#if 0
+     | exp_ps    (fn (env, bestowed_algsl) =>
+                                       let val _ = decslevel := 0
+                                           val exp = exp_ps env
+                                       in
+                                            (env, Program(ParseLib.get_libinfo env,
+                                                          bestowed_algsl,
+                                                          exp))
+                                       end)
+#endif
+
+#if 0
+trailer:                                   (fn ((l, r), env) => locify l r (Tuple[]))
+     | SEMICOLON exp_ps      (fn ((_, _), env) => exp_ps env)
+#endif
+
+
+optionalsemicolon: SEMICOLON (())
+     |   (())
+
+in_or_notin: IN    (IsSubtype)
+     | NOT IN        (IsNotSubtype)
+     | EQUALOP    (MutualSubtypes)
+
+defaultindexspec: EQUALOP X_exp           (fn env => SOME (X_exp env))
+      |                            (fn env => NONE)
+
+indexrecordspec: ID COLON sort defaultindexspec indexrecordspec
+            (fn env =>
+              let val fld = IndexFieldName.fresh ID
+                  val env = ParseLib.extend_fields env [(ID, (fld, ()))]
+                  val (env, rest) = indexrecordspec env
+              in (env, (fld, (sort env, defaultindexspec env)) :: rest)
+              end
+            )
+       |        (fn env => (env, []))
+
+indexspec: WITH indexrecordspec
+                (fn env => let val (env, irs) = indexrecordspec env 
+                                   in
+                                     (env, X.Sorting.Fields irs)
+                                   end)
+      | WITH sort defaultindexspec         (fn env => (env, X.Sorting.Nameless (sort env, defaultindexspec env)))
+      |        (fn env => (env, X.Sorting.None))
+
+
+typbind:
+       tyvarseq tcname EQUALOP texp AND_typbind_opt
+                                (let val tyvar_names = tyvarseq : string list
+                                     val tc = TC.fresh tcname
+                                 in
+                                     (tc,
+                                      fn env =>
+                                          let val tvbindings = ListPair.zip (tyvar_names, List.map TV.fresh tyvar_names)
+                                              val withTVs = ParseLib.Tyvar.extend env tvbindings
+                                              val (_, parsed_texp) = texp withTVs
+                                          in
+                                              (tvbindings, parsed_texp)
+                                          end)
+                                     ::
+                                     AND_typbind_opt
+                                 end)
+
+AND_typbind_opt:
+      AND typbind    (typbind)
+   |                           ([])
+
+
+synonymtypbind : 
+      typbind                  (fn env =>
+                                        buildSynonym env typbind (toLocation typbindleft typbindright))
+
+nativename :
+      EQUALOP STRING               (SOME STRING)
+   |                               (NONE)
+
+dec: 
+      DATATYPE tcname  nativename  indexspec  tyvarvarianceseq
+                      (fn env =>
+                          let 
+                              val tc = case nativename of
+                                                SOME native => TC.sanitary_fresh tcname native
+                                              | NONE => TC.fresh tcname
+                              val tc = TC.fresh tcname
+                              val tvinfos = List.map (fn (tyvar, variance) => Tvinfo (TV.fresh tyvar, variance))
+                                                     tyvarvarianceseq
+                              val (env, sorting) = indexspec env
+                              val env = ParseLib.Type.extend env [(tcname, ParseLib.SimpleType tc)]
+                              val typedec = Datatype {tc= tc,
+                                                  builtin= Option.isSome nativename,
+                                                  params= tvinfos,
+                                                  sorting= sorting,
+                                                  constructors= []}
+#if 0
+  Right thing to do here: use subsets in "sorting" to generate an "Implies(...( [] ))"
+  to add to the type of each constructor of this datatype.
+#endif
+                              val dec = Typedec [typedec]
+                          in
+                               (
+                                env
+                                ,
+                                [(toLocation DATATYPEleft indexspecright,
+                                  dec)]
+                               )
+                          end)
+
+#if 0
+ParseLib.Con.extend env bindings,
+                                         val withTVs = ParseLib.Tyvar.extend env (map (fn (s, tv) => (s, tv)) tvbindings)
+#endif
+
+
+    | DATACON idcon COLON texp nativename
+              (fn env =>
+                  let val (env, A) = texp env
+                      val (env, pv) = case ParseLib.Pvar.lookup_soft env idcon of
+                                   SOME (ParseLib.Convar, pv) => (env, pv)
+                                 | _ =>
+                                       let val pv = case nativename of
+                                                         SOME native => PV.sanitary_fresh idcon native
+                                                       | NONE => PV.fresh idcon
+                                           val _ = ("Constructor declaration -- freshening " ^ idcon ^ " --> " ^ PV.toString pv ^ "\n")
+                                           val (env) = ParseLib.Con.extend env (idcon, pv)
+                                       in
+                                           (env, pv)
+                                       end
+                  in
+                      (env, [(toLocation DATACONleft texpright, Datacon (pv, A))])
+                  end)
+
+
+     | DATASORT tcname COLON datasortpairs
+                   (fn env =>
+                       let val tc = ParseLib.Type.lookup_simple_type (err(tcnameleft, tcnameright)) env tcname
+                           val env' = ParseLib.process_subsortpairs tc env datasortpairs
+                       in
+                           (env', [])
+                       end)
+
+     | INDEXSORT id EQUALOP sort
+                 (fn env =>
+                     let val newSort = IndexSortSym.fresh id
+                         val sort' =
+                             case sort env of
+                                 X.Base sortname =>
+                                      X.Base sortname
+                               | sort' => sort'
+                         val env = ParseLib.extend_is env [(id, (newSort, sort'))]
+                     in
+                         (env, [])
+                     end)
+
+     | INDEXFUN id COLON indexfunctioncomponent indexfunctionspec
+                (fn env => let val iv = IndexSym.fresh id
+                               val info = (iv, X.IFun (indexfunctioncomponent env :: indexfunctionspec env))
+                               val _ = X.addFun info
+                               val env' = ParseLib.extend_iv env [(id, info)]
+                           in
+                               (env', [])
+                           end)
+
+     | INDEXCONSTANT id COLON sort
+                     (fn env =>
+                         let val iv = IndexSym.fresh id
+                             val range = sort env
+                             val info = (iv, case id of
+                                                             "true" => X.ITrue
+                                                           | "false" => X.IFalse
+                                                           | "NODIM" => X.INODIM
+                                                           | _ => if range = X.Base(X.getDimSort()) then
+                                                                      X.IBaseDim
+                                                                  else
+                                                                      X.INil range)
+                             val _ = X.addFun info
+                             val env' = ParseLib.extend_iv env [(id, info)]
+                         in
+                             (env', [])
+                         end)
+     | INDEXPRED id complement COLON sort indexpredspec
+                       (fn env => let val iv = IndexSym.fresh id
+                                  val first = {domain= sort env}
+                                  val rest = indexpredspec env
+                                  val complementaryPred = complement env
+                                  val info = (iv, X.IFun (map (fn {domain= domain} => {domain= domain,
+                                                                                       range= X.Base (X.getBoolSort()),
+                                                                                       complement= complementaryPred})
+                                                              (first :: rest)))
+                                  val _ = X.addFun info
+                                  val env = case complementaryPred of
+                                              NONE => env
+                                           |  SOME pred => let in case X.getSyminfo pred of
+                                                                       SOME (X.IFun xs) =>
+                                                                           let val infoC = X.IFun(
+                                                                                           map (fn {domain= s1, range= s2, complement= NONE}
+                                                                                                   =>
+                                                                                                   {domain=s1, range=s2, complement= SOME iv}) xs)
+                                                                           in
+                                                                           X.addFun (pred, infoC);
+                                                                           ParseLib.extend_iv env [(IndexSym.toShortString pred, (pred, infoC))]
+                                                                       end
+                                                            end
+                                  val env = ParseLib.extend_iv env [(id, info)]
+                        in
+                            (env, [])
+                        end)
+
+    | TESTSUBTYPE texp in_or_notin texp END
+             (fn env => let val (env, A) = texp1 env
+                            val sense = in_or_notin
+                            val (env, B) = texp2 env
+                            val loc = toLocation texp1left texp2right
+                            val d = TestSubtype (sense, (A, B)) 
+                        in
+                            (env, [(loc, d)])
+                        end)
+    
+    | PRIMITIVE primdec  (fn env => let val env = primdec env
+                                               in
+                                                   (env, [])
+                                               end)
+
+    | TYPE synonymtypbind      (synonymtypbind)
+
+    | VAL valdec         (fn env =>
+                                  let val (env, decs) = valdec env
+                                  in (env, decs)
+                                  end)
+    | VAL valtypedec    (fn env =>
+                                  let val (env, dec) = valtypedec env
+                                  in
+                                      (env, [dec])
+                                  end)
+
+    | FUN fdec    (fn env =>
+                                       let val (env, d) = fdec env
+                                       in
+                                           (env, [d])
+                                       end)
+
+
+#if 0
+decsunchecked: dec optionalsemicolon decsunchecked         (fn env =>
+                                   let val (env, ds) = dec env
+                                       val (env, dsl) = decsunchecked env
+                                   in (env, ds @ dsl)
+                                   end)
+     |                                              (fn env => (env, []))
+
+decs: decsunchecked (fn env =>
+                                            let val (env, unchecked) = decsunchecked env
+                                                val checked = check_decs unchecked
+                                            in
+                                                (env, checked)
+                                            end)
+#endif
+
+decs: dec decs    (fn env =>
+                                   let val (env, ds) = dec env
+                                       val (env, dsl) = decs env
+                                   in (env, ds @ dsl)
+                                   end)
+     |          (fn env => (env, []))
+
+colonoranticolon: COLON  (fn anno =>
+                                                   Sdml.Dectype.AGAINST anno
+                                              )
+                      | ANTICOLON  (fn anno =>
+                                       let in
+                                           case anno of
+                                               [Sdml.AnnotationType.Type A] => Sdml.Dectype.TOPLEVEL_NOT  A
+                                             | _ => fail ":! used with complex annotation"
+                                       end)
+
+valtypedec: id colonoranticolon annotationtypelist    (fn env =>
+                                     let 
+                                         val (env, anno) = annotationtypelist env
+                                         val (env, pv) =
+                                             case ParseLib.Pvar.lookup_soft env id of
+                                                 NONE =>
+                                                     let val pv = PV.fresh id
+                                                     in
+                                                         (ParseLib.Pvar.extendOpt env [(id, pv, SOME (Dectype.AGAINST anno),
+                                                                                        ParseLib.Neutral)],
+                                                          pv)
+                                                     end
+                                               | SOME (ParseLib.Ordvar (SOME _, ref ParseLib.Neutral), pv) =>
+                                                    (print ("Warning: unused type declaration (" ^ PV.toShortString pv
+                                                            ^ "), shadowed by new type declaration\n");
+                                                     let val pv = PV.fresh id
+                                                     in
+                                                         (ParseLib.Pvar.extendOpt env [(id, pv, SOME (Dectype.AGAINST anno), ParseLib.Neutral)],
+                                                          pv)
+                                                     end)
+                                               | SOME (ParseLib.Ordvar (_, pvstatus), pv) =>
+#if 0
+                 (* previous identifier defined in this scope -- OK *)
+                 (* XXX this is questionable with the new pvstatus system *)
+#endif
+                                                    (let val pv = PV.fresh id
+                                                     in
+                                                         (ParseLib.Pvar.extendOpt env [(id, pv, SOME (Dectype.AGAINST anno), ParseLib.Neutral)],
+                                                          pv)
+                                                     end)
+                                               | SOME (ParseLib.Convar, pv) =>
+                                                     (print ("Cannot shadow a constructor with a variable (" ^ PV.toShortString pv ^ ")\n");
+                                                      raise Option)
+                                         
+                                         val dectype = colonoranticolon anno
+                                     in
+                                         (env,
+                                            (toLocation idleft annotationtypelistright,
+                                             ValType (pv, dectype))
+                                         )
+                                     end)
+
+valdec: idw EQUALOP exp       (fn env =>
+                                                 let val (envWithThisDec, pv, annoOpt) =
+                                                         case ParseLib.Pvar.lookup_soft env idw of
+                                                             NONE =>
+                                                                let val pv = PV.fresh idw
+                                                                    val _ = dprint (fn () => "valdec  " ^ idw ^ ":  -NONE-")
+                                                                    val env = ParseLib.Pvar.extendOpt env [(idw, pv, NONE, ParseLib.DefinedVal)]
+                                                                in
+                                                                    (env, pv, NONE)
+                                                                end
+                                                           | SOME (ParseLib.Ordvar (annoOpt, pvstatus as ref ParseLib.Neutral), pv) =>
+                                                                let 
+                                                                    val _ = dprint (fn () => "valdec  " ^ idw ^ ":  ParseLib.Neutral")
+                                                                    val _ = pvstatus := ParseLib.DefinedVal
+                                                                in
+                                                                    (env, pv, annoOpt)
+                                                                end
+                                                           | SOME (ParseLib.Ordvar (annoOpt, ref ParseLib.DefinedVal), pv) =>
+                                                                let val pv = PV.fresh idw
+                                                                    val _ = dprint (fn () => "valdec  " ^ idw ^ ":  ParseLib.DefinedVal")
+                                                                    val env = ParseLib.Pvar.extendOpt env [(idw, pv, annoOpt, ParseLib.DefinedVal)]
+                                                                in
+                                                                    (env, pv, annoOpt)
+                                                                end
+                                                           | SOME (ParseLib.Ordvar (annoOpt, ref ParseLib.DefinedFun), pv) =>
+                                                                 (print ("Cannot use `val' to redefine `fun' " ^ PV.toShortString pv ^ "\n");
+                                                                  raise Option)
+                                                           | SOME (ParseLib.Ordvar (annoOpt, ref ParseLib.FutureFun), pv) =>
+                                                                 (print ("Must use `fun' to declare variable " ^ PV.toShortString pv ^ "\n");
+                                                                  raise Option)
+                                                           | SOME (ParseLib.Convar, pv) =>
+                                                                 (print ("Cannot shadow a constructor with a variable (" ^ PV.toShortString pv ^ ")\n");
+                                                                  raise Option)
+
+                                                     val loc = toLocation idwleft expright
+                                                     val texpdec = case annoOpt of
+                                                                                NONE => []
+                                                                              | SOME dectype =>
+                                                                                     let in
+                                                                                         [(loc, ValType (pv, dectype))]
+                                                                                     end
+                                                     val expdec = [(loc, Dec (pv, ValKW, exp env))]
+                                                 in
+                                                     (envWithThisDec,
+                                                         texpdec @ expdec
+                                                     )
+                                                 end)
+
+idw: id                 (id)
+       | WILD                   ("anon_")
+
+idcon: id                 (id)
+       | DBLCOLON                 ("::")
+
+fdec: id fdef      (fn env =>                                   
+                                        let val (envWithFun, pv) =
+                                                case ParseLib.Pvar.lookup_soft env id of
+                                                    NONE =>
+                                                        let val pv = PV.fresh id 
+                                                        in
+                                                            (ParseLib.Pvar.extendOpt env [(id, pv, NONE, ParseLib.DefinedFun)],
+                                                             pv)
+                                                        end
+                                                  | SOME (ParseLib.Ordvar (annoOpt, pvstatus as ref ParseLib.Neutral), pv) =>
+                                                        let val _ = pvstatus := ParseLib.DefinedFun
+                                                        in
+                                                            (env, pv)
+                                                        end
+                                                  | SOME (ParseLib.Ordvar (annoOpt, pvstatus as ref ParseLib.FutureFun), pv) =>
+                                                        let val _ = pvstatus := ParseLib.DefinedFun
+                                                        in
+                                                            (env, pv)
+                                                        end
+                                                  | SOME (ParseLib.Ordvar (annoOpt, ref ParseLib.DefinedFun), pv) =>
+                                                        (print ("Cannot shadow `fun' with `fun': variable " ^ PV.toShortString pv ^ "\n");
+                                                         raise Option)
+                                                  | SOME (ParseLib.Ordvar (annoOpt, ref ParseLib.DefinedVal), pv) =>
+                                                        (print ("Cannot shadow `val' with `fun': variable " ^ PV.toShortString pv ^ "\n");
+                                                         raise Option)
+                                                  | SOME (ParseLib.Convar, pv) =>
+                                                        (print ("Cannot shadow a constructor with a variable (" ^ PV.toShortString pv ^ ")\n");
+                                                         raise Option)
+                                        in
+                                            (envWithFun,
+                                               (toLocation idleft fdefright,
+                                                Dec(pv, FunKW, fdef envWithFun))
+                                            )
+                                        end)
+
+fdef: idl fdef      (fn env =>
+                                     let val pvl = List.map PV.fresh idl
+                                         val bindings = ListPair.zip (idl, pvl)
+                                         val env' = ParseLib.Pvar.extend_DefinedVal env bindings
+                                     in locify idlleft fdefright (ParseLib.Pvar.tupleize pvl (fdef env'))
+                                     end)
+    | idl EQUALOP exp   
+                                (fn env => 
+                                     let val pvl = List.map PV.fresh idl
+                                         val bindings = ListPair.zip (idl, pvl)
+                                         val env' = ParseLib.Pvar.extend_DefinedVal env bindings
+                                     in locify idlleft expright (ParseLib.Pvar.tupleize pvl (exp env'))
+                                     end)
+
+
+exp:   expA             (fn env => expA env)
+  | FN idl DARROW exp
+                                (fn env => 
+                                        let val pvl = map PV.fresh idl
+                                            val bindings = ListPair.zip (idl, pvl)
+                                            val env' = ParseLib.Pvar.extend_DefinedVal env bindings
+                                        in locify FNleft expright (ParseLib.Pvar.tupleize pvl (exp env'))
+                                        end)
+
+expA:
+       expA DBLCOMMA expB
+                  (fn env =>
+                      let val head = expA env
+                          val tail = expB env
+                      in
+                          case head of
+                              (loc, Merge head) => locify expAleft expBright (Merge (head @ [tail]))
+                            | head => locify expAleft expBright (Merge [head, tail])
+                      end)
+    | 
+       expB  (fn env => expB env)
+
+
+expB:
+      WHERE ID COLON texp DO expB    (fn env =>
+                                         let val (_, A) = texp env
+                                             val (pvinfo, pv) = ParseLib.Pvar.lookup (err(IDleft, IDright)) env ID
+                                             val tail = expB env
+                                    in
+                                        case pvinfo of
+                                            ParseLib.Convar => (err(IDleft, IDright) "constructors forbidden in concrete contexts";
+                                                           raise Debug.StdExcept("", ""))
+                                          | ParseLib.Ordvar _ =>
+                                                let val leftanno = LeftProgramVar (pv, A)
+                                                in
+                                                    (toLocation IDleft expBright, Leftanno (leftanno, tail))
+                                                end
+                                    end)
+    | 
+       expC  (fn env => expC env)
+
+
+
+#if 0
+exp_ps: exp                    (fn env => exp env)
+
+      | exp SEMICOLON exp_ps   (fn env => locify expleft exp_psright (Let(
+                                               [(toLocation expleft exp_psright, Dec(PV.fresh "anonSemi", ValKW, exp env))],
+                                               exp_ps env)))
+#endif
+
+
+
+expC: expD                  (fn env => expD env)
+      | CASE expD OF arms          (fn env =>
+                                       locify CASEleft armsright (Case(expD env, Basic.mapapply arms env))
+                                   )
+
+
+expD: expI                    (fn env => expI env)
+      | expI SEMICOLON expD   (fn env => locify expIleft expDright (Let(
+                                               [(toLocation expIleft expDright, Dec(PV.fresh "anonSemi", ValKW, expI env))],
+                                               expD env)))
+
+expI:
+        expR                (fn env => expR env)
+
+   | IF expR THEN expI ELSE expI   (fn env => 
+                                    let val {true= true_pv, false= false_pv} = ParseLib.Con.get_bool (err(IFleft,expI2right)) env
+                                    in locify IFleft expI2right (Case(expR env,
+                                            [Arm(CtorPattern(true_pv,NONE),expI1 env),
+                                             Arm(CtorPattern(false_pv,NONE),expI2 env)]))
+                                    end)
+
+
+expR:
+         expS                (fn env => expS env)
+       | expS ORELSE expS            (fn env =>
+                                        let val {true= true_pv, false= false_pv} = ParseLib.Con.get_bool (err(expS1left,expS2right)) env
+                                        in locify expS1left expS2right (Case(expS1 env,
+                                                [Arm(CtorPattern(true_pv,NONE), locify ORELSEleft ORELSEright (Var true_pv)),
+                                                 Arm(CtorPattern(false_pv,NONE), expS2 env)]))
+                                        end)
+       | expS ANDALSO expS            (fn env => 
+                                        let val {true= true_pv, false= false_pv} = ParseLib.Con.get_bool (err(expS1left,expS2right)) env
+                                        in locify expS1left expS2right (Case(expS1 env,
+                                                [Arm(CtorPattern(true_pv,NONE), expS2 env),
+                                                 Arm(CtorPattern(false_pv,NONE), locify ANDALSOleft ANDALSOright (Var false_pv))]))
+                                        end)
+
+       | RAISE expS                  (fn env => locify RAISEleft expSright (Raise (expS env)))
+
+
+expS:
+     expZ                (fn env => expZ env)
+#if 0
+   | expZ ctxanno                                         (fn env => let val anno = ctxanno env
+                                                            in
+                                                                locify expZleft ctxannoright (Anno(expZ env, anno))
+                                                        end)
+#endif
+   | expZ ctxanno                                         (fn env =>
+                                                              let val anno = ctxanno env
+                                                              in
+                                                                  locify expZleft ctxannoright (Anno (expZ env, anno))
+                                                              end)
+   | DQUESTION expZ       (fn env => 
+                             let val e0 = expZ env
+                             in
+                                 locify DQUESTIONleft expZright (Spy ((), e0))
+                             end)
+   | TRY exp HANDLE id DARROW exp END
+                            (fn env =>
+                                let val pv = PV.fresh id
+                                    val env' = ParseLib.Pvar.extend_DefinedVal env [(id, pv)]
+                                in
+                                    locify exp1left exp2right (Handle (exp1 env, pv, exp2 env'))
+                                end)
+
+
+expZ:
+      app_exp         (fn env => unflatten (app_exp env))
+
+#if 0
+(*
+   | exp_X DBLCOLON exp          (fn env =>
+                                    let val {nil=nil_pv,cons=cons_pv} = ParseLib.Con.get_list (err(exp_Xleft,expright)) env
+                                        val cons_var = locify DBLCOLONleft DBLCOLONright (Var (cons_pv))
+                                    in locify exp_Xleft expright (App (cons_var,locify exp_Xleft expright (Tuple(Basic.mapapply [exp_X,exp] env)))) end)
+    | exp_X infix_op exp              (fn env => locify (App (infix_op env, Tuple [exp env, exp_X env])))
+*)
+
+       | exp_X COLON texp                        (fn env => let val (env, texp') = texp env
+                                                            in
+                                                                locify exp_Xleft texpright (Anno(exp_X env, texp'))
+                                                        end)
+#endif
+
+app_exp : aexp          (fn env =>
+                              let val item = aexp env
+                              in
+                                  [{item= item,
+                                          loc=toLocation aexpleft aexpright, fixity=NONE}]
+                              end)
+        | id         (fn env =>
+                                       let 
+                                           val _ = mungeEnvForFwdRef env id
+                                           val (v,f) = var'n'fix env id (err(idleft,idright))
+                                       in
+                                            [{item=locify idleft idright (v),
+                                              loc=toLocation idleft idright,
+                                              fixity=SOME f}]
+                                       end)
+        | aexp app_exp  (fn env => 
+                            let val item = aexp env
+                                val tail = app_exp env
+                            in
+                                {item= item,
+                                 loc= toLocation aexpleft aexpright, fixity=NONE}
+                                :: tail
+                            end)
+        | id app_exp (fn env =>
+                             let val _ = mungeEnvForFwdRef env id
+                                 val (v,f) = var'n'fix env id (err(idleft,idright))
+                             in
+                                 {item=locify idleft idright v,
+                                  loc=toLocation idleft idright,
+                                  fixity=SOME f}
+                                 ::
+                                 (app_exp env)
+                             end)
+
+recordexp_component : 
+            ID EQUALOP exp        (fn env => locify IDleft expright (RecordExp(ID, exp env)))
+
+recordexp_component_list : 
+            recordexp_component COMMA recordexp_component_list         (fn env =>
+                                       (recordexp_component env) :: (recordexp_component_list env))
+        |  recordexp_component                            (fn env => [recordexp_component env])
+
+
+aexp : INT                      (fn env => let val tc = ParseLib.Type.get "int" (err(INTleft, INTright)) env
+                                           in
+                                               locify INTleft INTright (Const(Tycon(tc, X.O(X.Literal (X.getIntSort(), INT)), []),
+                                                                              INT))
+                                           end)
+
+    | REAL                (fn env =>
+                                        let val tc = ParseLib.Type.get "real" (err(REALleft, REALright)) env
+                                            val texp =
+                                                     if Real.== (Option.valOf (Real.fromString REAL), 0.0) then
+                                                         let val zz = IndexSym.fresh "zz"
+                                                         in
+                                                             Univ(zz, X.Base (X.getDimSort()), Tycon(tc, X.O (X.Uvar zz), []))
+                                                         end
+                                                     else
+                                                         Tycon(tc, X.N, [])
+#if 0
+                                                                          (* will [NOT] be changed to SOME NODIM by Inject.sml [BUT WILL BE TYPECHECKED AS IF IT WERE] *)
+#endif
+                                        in
+                                            locify REALleft REALright (Const(texp, REAL))
+                                        end)
+
+    | STRING                      (fn env => let val tc = ParseLib.Type.get "string" (err(STRINGleft, STRINGright)) env
+                                           in
+                                               locify STRINGleft STRINGright (Const(Tycon(tc, X.N, []),
+                                                                              STRING))
+                                           end)
+
+    | CHAR                      (fn env => let val tc = ParseLib.Type.get "char" (err(CHARleft, CHARright)) env
+                                           in
+                                               locify CHARleft CHARright (Const(Tycon(tc, X.N, []),
+                                                                              CHAR))
+                                           end)
+
+    | LBRACE recordexp_component_list RBRACE   (fn env =>
+                                               let val recordexps = recordexp_component_list env
+                                               in
+                                                   locify LBRACEleft RBRACEright (Merge recordexps)
+                                               end)
+
+
+    | LET decs IN exp END   (fn env => 
+                                      let val _ = decslevel := !decslevel + 1
+                                          val (env, dsl) = decs env
+                                      in 
+                                          locify LETleft ENDright (Let (dsl, exp env))
+                                          before decslevel := !decslevel - 1
+                                      end)
+
+    | LETHINT annotationtypelist IN exp END   (fn env =>
+                                         let val (_, anno) = annotationtypelist env
+                                         in
+                                             locify INright ENDleft (Lethint(anno, exp env))
+                                         end)
+    
+    | HASH INT LPAREN exp RPAREN (fn env => locify HASHleft RPARENright (Proj (INT, exp env)))
+
+    | HASH ID LPAREN exp RPAREN (fn env => locify HASHleft RPARENright (Proj (ID, exp env)))
+
+    | LPAREN RPAREN                               (fn env => locify LPARENleft RPARENright (Tuple []))
+
+    | LPAREN exp RPAREN                      (fn env => exp env)
+
+    | LPAREN exp_2c RPAREN      (fn env => case exp_2c of
+                                     [exp] => raise Option
+                                   | list => locify LPARENleft RPARENright (Tuple (Basic.mapapply list env)))
+
+    | LBRACK exp_list RBRACK    (fn env =>
+                                 let val {nil= nil_pv, cons=cons_pv} = ParseLib.Con.get_list (err(exp_listleft,exp_listright)) env
+                                     fun aux [] = locify  LBRACKleft RBRACKright (Con nil_pv)
+                                       | aux (exp::exps) = locify LBRACKleft RBRACKright
+                                             (Conapp (cons_pv,
+                                                   locify LBRACKleft RBRACKright (Tuple([exp env, aux exps]))))
+                                 in
+                                     aux exp_list
+                                 end)
+
+
+exp_list: exp_2c                   (exp_2c)
+        | exp                    ([exp])
+        |                        ([])
+
+arms: arm                     ([arm])
+     | arm BAR arms           (arm :: arms)
+
+atpattern: id        (fn env =>
+                        let in case ParseLib.Pvar.lookup_soft env id of
+                            SOME (ParseLib.Convar, pv) => (env, CtorPattern(pv, NONE))
+                          | _ => 
+                                let val pv = PV.fresh id
+                                in
+                                    (ParseLib.Pvar.extend_DefinedVal env [(id, pv)], VarPattern pv)
+                                end
+                        end)
+    
+    | LBRACK patternlz RBRACK    (fn env =>
+                                    let val {nil= nil_pv, cons= cons_pv} = ParseLib.Con.get_list (err(patternlzleft, patternlzright)) env
+                                        val (env, pat_list) = patternlz env
+                                        fun loop env [] = (env, CtorPattern (nil_pv, NONE))
+                                          | loop env (head :: pats) =
+                                                let val (env, tail) = loop env pats
+                                                in
+                                                    (env, CtorPattern (cons_pv, SOME (TuplePattern[head, tail])))
+                                                end
+                                    in
+                                        loop env pat_list
+                                    end)
+
+    | WILD                 (fn env => (env, WildPattern))
+    | INT                 (fn env => (env, IntPattern (valOf (Int.fromString INT))))
+    | STRING                 (fn env => (env, StringPattern STRING))
+    | LPAREN RPAREN                         (fn env => (env, TuplePattern []))
+    | LPAREN pattern patternl RPAREN     (fn env =>
+                                          let val (env, pattern') = pattern env
+                                              val (env, patternl'') = patternl env
+                                          in
+                                              case patternl'' of
+                                                  [] => (env, pattern')
+                                                | patternl'' => 
+                                                      (env, TuplePattern (pattern' :: patternl''))
+                                          end)
+    | ID atpattern     (fn env => case ParseLib.Pvar.lookup_soft env ID of
+                          SOME (ParseLib.Convar, pv) =>
+                              let val (env, atpattern') = atpattern env
+                              in
+                                  (env,
+                                   CtorPattern(pv, SOME atpattern'))
+                              end
+                        | _ => (err(IDleft,IDright) ("identifier \"" ^ ID ^ "\" in constructor position in pattern is not a constructor") ;
+                                raise Debug.StdExcept("", "")))
+    | ID AS atpattern         (fn env =>
+                             let val pv = PV.fresh ID
+                                 val env = ParseLib.Pvar.extend_DefinedVal env [(ID, pv)]
+                                 val (env, atpattern') = atpattern env
+                             in
+                                 (env, AsPattern (pv, atpattern'))
+                             end)
+
+
+#if 0
+atpatternl:                       (fn env => (env, []))
+  | COMMA atpattern atpatternl   (fn env =>
+                              let val (env, atpattern') = atpattern env
+                                  val (env, atpatternl'') = atpatternl env
+                              in
+                                  (env, atpattern' :: atpatternl'')
+                              end)
+#endif
+
+pattern:   atpattern                (fn env => atpattern env)
+  | atpattern DBLCOLON pattern   (fn env =>
+                                     let val (env, head) = atpattern env
+                                         val (env, tail) = pattern env
+                                         val {cons= cons_pv, ...} = ParseLib.Con.get_list (err(atpatternleft, patternright)) env
+                                     in
+                                         (env, CtorPattern (cons_pv, SOME (TuplePattern[head, tail])))
+                                     end)
+
+patternl:                       (fn env => (env, []))
+  | COMMA pattern patternl   (fn env =>
+                              let val (env, pattern') = pattern env
+                                  val (env, patternl'') = patternl env
+                              in
+                                  (env, pattern' :: patternl'')
+                              end)
+
+patternlz:                       (fn env => (env, []))
+  | pattern patternl   (fn env =>
+                              let val (env, pattern') = pattern env
+                                  val (env, patternl'') = patternl env
+                              in
+                                  (env, pattern' :: patternl'')
+                              end)
+
+arm: pattern DARROW expD (fn env => 
+                                        let val (env', pattern') = pattern env
+                                        in
+                                            Arm(pattern', expD env')
+                                        end)
+
+
+
+idl: idw                ([idw])
+   | LPAREN ids RPAREN      (ids)
+   | LPAREN RPAREN              ([])
+
+
+ids: idw                ([idw])
+   | idw COMMA ids      (idw::ids)
+
+exp_2c: exp COMMA exp_2c        (exp::exp_2c)
+    | exp COMMA exp             ([exp1,exp2])
+
+#if 0
+exp_2comma_leftassoc: exp_2comma_leftassoc COMMA exp        (fn env => exp_2comma_leftassoc env @ [exp env])
+    | exp COMMA exp             (fn env => [exp1 env, exp2 env])
+#endif
+
+proposition:  X_exp  (fn env =>
+                      case X_exp env of
+                          X.App(sym, exp) => let in case X.getSyminfo sym of
+                              NONE => (err(X_expleft, X_expright) ("undefined index function/predicate: " ^ IndexSym.toShortString sym); X.TRUE)
+                            | SOME (X.IFun [{domain= domain, range= codomain, ...}]) =>
+                              let in if codomain = X.Base (X.getBoolSort()) then
+                                        let in
+                                            if IndexSym.toShortString sym = "=" then
+                                                let in case (domain, exp) of
+                                                    (X.Product[sort1, sort2], X.Tuple[exp1, exp2]) => X.EQ(sort1, exp1, exp2)
+                                                end
+                                            else
+                                                X.PRED(sym, exp)
+                                        end
+                                     else
+                                         (err(X_expleft, X_expright) ("`" ^ IndexSym.toShortString sym ^ "' is a function, not a predicate");
+                                          X.TRUE)
+                              end
+                            | SOME (X.IFun _) => (err(X_expleft, X_expright) ("`" ^ IndexSym.toShortString sym
+                                                                                  ^ "' is multi-sorted, and is therefore a function, not a predicate");
+                                          X.TRUE)
+                                           end
+                        | _ => (err(X_expleft, X_expright) ("proposition expected"); X.TRUE)
+                              )
+   | proposition AND proposition   (fn env => X.AND(proposition1 env, proposition2 env))
+   | proposition ORELSE proposition   (fn env => X.OR(proposition1 env, proposition2 env))
+
+tyvarseq: TYVAR                 ([TYVAR])
+   | LPAREN tyvars RPAREN      (tyvars)
+   |                            ([])
+
+tyvarvariance: TYVAR variancesymbol ((TYVAR, variancesymbol))
+
+tyvarvarianceseq:
+     tyvarvariance tyvarvarianceseq      (tyvarvariance :: tyvarvarianceseq)
+   |                            ([])
+
+tyvars: TYVAR                 ([TYVAR])
+   | TYVAR COMMA tyvars       (TYVAR::tyvars)
+
+texp: texpI                   (texpI)
+   | DASHALL dashalltail   (dashalltail)
+
+texpI:  texpC                    (texpC)
+    | texpI AMP texpC           (fn env => 
+                                        let val (env', tLeft) = texpI env
+                                            val (env'', tRight) = texpC env'
+                                        in (env'', Sect(tLeft, tRight))
+                                        end)
+    | texpI DBLAMP texpC           (fn env => 
+                                        let val (env', tLeft) = texpI env
+                                            val (env'', tRight) = texpC env'
+                                        in (env'', Rsect(tLeft, tRight))
+                                        end)
+
+texpC:  texpD                   (texpD)
+    | texpD ARROW texpC         (fn env => 
+                                        let val (env', tLeft) = texpD env
+                                            val (env'', tRight) = texpC env'
+                                        in (env'', Arrow(tLeft, tRight))
+                                        end)
+
+dashalltail: ID commaids COLON sort MINUS texp    (fn env => 
+                          let
+                              val _ = dprnt "dashalltail ID"
+                              val srt = sort env
+                              val idlist = ID :: commaids
+                              val bindings = map (fn idstring => (idstring, (IndexSym.fresh idstring, X.IUVar srt))) idlist
+                              val env' = ParseLib.extend_iv env bindings
+                              val (env'', t) = texp env'
+                              val  _ = dprint (fn () => "texp in scope of Univ: " ^ Print.pTexp t)
+                              fun buildUnivs [] = t
+                                | buildUnivs ((_, (iv, _)) :: rest) = Univ(iv, srt, buildUnivs rest)
+                          in
+                              (env, buildUnivs bindings)
+                          end)
+  | TYVAR commatyvars MINUS texp (fn env =>
+                          let
+                              val idlist = TYVAR :: commatyvars
+                              val bindings = map (fn idstring => (idstring, TV.fresh idstring)) idlist
+                              val env' = ParseLib.Tyvar.extend env bindings
+                              val (env'', t) = texp env'
+                              fun buildAlls [] = t
+                                | buildAlls ((_, tv) :: rest) = All(tv, Types.outer_universe, buildAlls rest)
+                          in
+                              (env, buildAlls bindings)
+                          end)
+                                     
+commaids: COMMA ID commaids    (ID :: commaids)
+  |                                          ([])
+
+commatyvars: COMMA TYVAR commatyvars    (TYVAR :: commatyvars)
+  |                                          ([])
+
+indexrefinement:     LBRACK X_explist RBRACK     (fn env => X.O (X_explist env))
+#if 0
+    | LBRACK LBRACK indexfields RBRACK RBRACK                           (fn env => X.I (indexfields env))
+#endif
+    |                                                                        (fn env => X.N)
+
+#if 0
+indexfield: ID EQUALOP X_exp              (fn env => let val (fld, useless_info as ()) = ParseLib.lookup_field (err(IDleft,IDright)) env ID
+                                                                        in
+                                                                          (fld, X_exp env)
+                                                                        end)
+
+indexfields: indexfield                                   (fn env => [indexfield env])
+    |              indexfield COMMA indexfields  (fn env => indexfield env :: indexfields env)
+#endif
+
+texpD: texpE                  (fn env => 
+                                        let val (env', tl) = texpE env
+                                        in (env', case tl of [t] => t | tl => Product tl)
+                                        end)
+     | DASHEXISTS ID commaids COLON sort MINUS texpD           (fn env => 
+                                                            let val srt = sort env
+                                                                val idlist = ID :: commaids
+                                                                val bindings = map (fn idstring => (idstring, (IndexSym.fresh idstring, X.IEVar srt))) idlist
+                                                                val env' = ParseLib.extend_iv env bindings
+                                                                val (env'', t) = texpD env'
+                                                                fun buildExiss [] = t
+                                                                  | buildExiss ((_, (iv, _)) :: rest) = Exis(iv, srt, buildExiss rest)
+                                                            in
+                                                                (env, buildExiss bindings)
+                                                            end)
+     | LBRACK proposition RBRACK texpD            (fn env =>
+                                                 let val prop = proposition env
+                                                     val (env, t) = texpD env
+                                                 in
+                                                     (env, Conj(prop, t))
+                                                 end)
+
+
+texpE: texpU                  (fn env => 
+                                        let val (env',t) = texpU env 
+                                        in (env',[t])
+                                        end)
+       | texpE ASTERISK texpU (fn env => 
+                                        let val (env',tl) = texpE env
+                                            val (env'',t) = texpU env'
+                                        in (env'', tl @ [t])
+                                        end)
+
+texpU: texpY            (texpY)
+    | texpU SLASH texpU   (fn env => 
+                                       let val (env',tLeft) = texpU1 env
+                                           val (env'',tRight) = texpU2 env'
+                                       in (env'', Union(tLeft, tRight))
+                                       end)
+    | texpU DBLSLASH texpU   (fn env => 
+                                       let val (env',tLeft) = texpU1 env
+                                           val (env'',tRight) = texpU2 env'
+                                       in (env'', Runion(tLeft, tRight))
+                                       end)
+
+
+
+record_component : 
+            ID COLON texp        (fn env => let val (env, field_type) = texp env
+                                                           in
+                                                               (env, Record(ID, field_type))
+                                                           end)
+
+record_component_list : 
+            record_component COMMA record_component_list         (fn env =>
+                                                           let val (env, component) = record_component env
+                                                               val (env, component_list) = record_component_list env
+                                                           in
+                                                               (env, component :: component_list)
+                                                           end)
+        |  record_component                            (fn env =>
+                                                           let val (env, component) = record_component env
+                                                           in
+                                                               (env, [component])
+                                                           end)
+
+
+texpY:  texpZ                (texpZ)
+    | LBRACE LBRACE proposition RBRACE RBRACE texp           (fn (env) =>
+                                                 let val prop = proposition env
+                                                     val (env, t) = texp (env)
+                                                 in
+                                                     (env, Implies(prop, t))
+                                                 end)
+    | LBRACE record_component_list RBRACE                  (fn env =>
+                                                 let val (env, fields : texp list) = record_component_list env
+                                                     val intersection = List.foldl (Sdml.mkSect) Top fields
+                                                 in
+                                                     (env, intersection)
+                                                 end)
+
+texpZ:  atomictexp texpl    (fn env =>
+                                                  let val (env, atomic) = atomictexp env
+                                                      val (env, new_args) = texpl env
+                                                  in
+                                                      case atomic of
+                                                          Tycon (tc, ix, old_args) =>
+                                                                (env, Tycon (tc, ix, old_args @ new_args))
+                                                        | texp => 
+                                                               (env, texp)
+                                                  end)
+
+
+atomictexp:
+         LPAREN texp RPAREN       (texp)
+      | TYVAR                   (fn env =>
+                                        let val (env', tv) = 
+                                              case ParseLib.Tyvar.lookup_soft env TYVAR of
+                                                NONE => 
+                                                   (err(TYVARleft, TYVARright) 
+                                                        ("undefined type variable: " ^ TYVAR);
+                                                    (env, TV.fromInt ~1))
+                                              | SOME tv => (env, tv)
+                                        in (env', Typevar tv)
+                                        end)
+
+      | tcname indexrefinement              (fn env => 
+                                        let
+                                            val ix1 = indexrefinement env
+                                            val (env', tl) = (env, [])
+                                            fun process tc1 = (env', Tycon (tc1, ix1, tl))
+
+                                            val (env, result) =
+                                                    case ParseLib.Type.lookup (err(tcnameleft,tcnameright)) env tcname of
+                                                        ParseLib.SimpleType tc1 => process tc1
+                                                      | ParseLib.Datasort(ds, _) => process ds
+                                                      | ParseLib.TypeSynonym (tc, tv) =>
+                                                             (env, Extypevar tv)
+                                        in
+                                            ("PARSED type: " ^ Types.typeToString result ^ "\n");
+                                            (env, result)
+                                        end)
+
+      | UNIT                   (fn env => (env, Product []))
+      | TOP                    (fn env => (env,Top))
+      | BOT                    (fn env => (env,Bot))
+
+texpl: atomictexp texpl                (fn env => 
+                                        let val (env',t) = atomictexp env
+                                            val (env'',tl) = texpl env'
+                                        in (env', t::tl)
+                                        end)
+
+#if 0     
+     | LPAREN texp COMMA texps RPAREN      (fn env => 
+                                        let val (env', t) = texp env
+                                            val (env'', tl) = texps env'
+                                        in (env'', t::tl)
+                                        end)
+#endif
+     |                          (fn env => (env, []))
+
+#if 0
+texps: texp          (fn env => 
+                                        let val (env', t1) = texp env
+                                        in (env', [t1])
+                                        end)
+     | texp COMMA texps         (fn env => 
+                                        let val (env', t) = texp env
+                                            val (env'', tl) = texps env'
+                                        in (env'', t::tl)
+                                        end)
+#endif
+
+tcname: ID                      (ID)
+
+id: ID                      (ID)
+      | ASTERISK                ("*")
+      | PLUS                ("+")
+      | MINUS                ("-")
+      | EQUALOP                ("=")
+      | SLASH                ("/")
+
+datasortpair: ID ID ID     (if (ID2 <> "<") andalso (ID2 <> "<=") then (err (ID2left, ID2right) ("bad subsort declaration: missing `<='"); raise Option)
+                                else (ID1, ID3))
+
+datasortpairs:   datasortpair                     ([datasortpair])
+  | datasortpair SEMICOLON datasortpairs   (datasortpair :: datasortpairs)
+
+complement:           (fn env => NONE)
+   | ANTICOLON id (fn env =>
+                          let val (iv, syminfo) = ParseLib.lookup_iv (err(idleft, idright)) env id
+                          in
+                              case syminfo of
+                                  X.IFun _ => SOME iv
+                                | _ => (err (idleft, idright) ("indexpred complement spec is not an index predicate: " ^ id); NONE)
+                          end)
+
+indexfunctioncomponent:  sort ARROW sort    (fn env => {domain=sort1 env, range= sort2 env, complement= NONE})
+indexfunctionspec:          (fn env => [])
+   | COMMA indexfunctioncomponent indexfunctionspec   (fn env =>
+                                                          let val c = indexfunctioncomponent env
+                                                              val rest = indexfunctionspec env
+                                                          in
+                                                              c :: rest
+                                                          end)
+
+indexpredspec:          (fn env => [])
+   | COMMA sort indexpredspec   (fn env =>
+                                                          let val c = {domain= sort env}
+                                                              val rest = indexpredspec env
+                                                          in
+                                                              c :: rest
+                                                          end)
+
+variancesymbol: PLUS   (Sdml.Variance.Co)
+     | MINUS   (Sdml.Variance.Contra)
+     | ASTERISK     (Sdml.Variance.Non)
+     |                    (Sdml.Variance.Non)
+
+
+
+
+
+primdec:
+    TYPE tcname indexspec   (fn env => let val tc = TC.fresh tcname
+                             val (env, ispec) = indexspec env
+                             val env = ParseLib.Type.extend_libinfo env (tc, ispec)
+                             val env = ParseLib.Type.extend env [(tcname, ParseLib.SimpleType tc)]
+                                  in
+                                      env
+                                  end)
+  | FUN id stringopt COLON texp EQUALOP stringseq  
+                       (fn env =>
+                             let val sanitized_name = Option.getOpt (stringopt, id)
+                                 val pv = PV.sanitary_fresh id sanitized_name
+                                 val (_, t) = texp env
+                                 val elaboration = stringseq
+                                 val env = ParseLib.Pvar.extend_libinfo_primop env (pv, {source_texp= t,
+                                                                               elaboration= elaboration, 
+                                                                               proper_name= id,
+                                                                               sanitized_name= sanitized_name})
+                                 val env = ParseLib.Pvar.extend_DefinedVal env [(id, pv)]
+                             in
+                                 env
+                             end)
+  | VAL id COLON texp EQUALOP stringseq    (fn env => let val pv = PV.fresh id
+                             val (_, t) = texp env
+                             val elaboration = stringseq
+                             val env = ParseLib.Pvar.extend_libinfo_primop env
+                                                                    (pv, {source_texp= t, elaboration= elaboration, proper_name= id,
+                                                                          sanitized_name= id})
+                             val env = ParseLib.Pvar.extend_DefinedVal env [(id, pv)]
+                            in
+                                env
+                            end)
+
+stringseq: STRING       (STRING)
+  | STRING stringseq   (String.concat [STRING, "\n", stringseq])
+
+stringopt: STRING       (SOME STRING)
+       |                             (NONE)
+
+#if 0
+typedeczzz: ctxanno      (fn env =>
+                                         let val anno = ctxanno env
+                                         in
+                                             if !decslevel > 0 then (
+                                                 Dectype.AGAINST anno
+                                             ) else let in
+                                                 case anno of
+                                                     [([], texp)] => Dectype.TOPLEVEL_AGAINST texp
+                                                   | _ => (err(ctxannoleft, ctxannoright)
+                                                         "contextual annotation not allowed at top level";
+                                                           raise Debug.StdExcept("",""))
+                                                  end
+                                         end)
+   |  ANTICOLON texp      (fn env =>
+                                         let val (env', texp) = texp env
+                                         in
+                                             Dectype.TOPLEVEL_NOT texp
+                                         end)
+
+typedec: ID typedeczzz      (fn env =>
+                             (ID, typedeczzz env))
+#endif
+
+
+sort: sprodel                  (fn env => case sprodel env of
+                                [s] => s
+                              | sl => X.Product sl)
+     | UNIT                     (fn env => X.Product [])
+     | LBRACE ID COLON sort BAR proposition RBRACE   (fn env =>
+                                                          let 
+                                                              val sym = IndexSym.fresh ID
+                                                              val sort' = sort env
+                                                              val env' = ParseLib.extend_iv env [(ID, (sym, X.IUVar sort'))]
+                                                              val prop = proposition env'
+                                                          in
+                                                              X.Subset (sort', sym, prop)
+                                                          end)
+
+sprodel: sort0                  (fn env => [sort0 env])
+       | sort0 ASTERISK sprodel (fn env => (sort0 env) :: (sprodel env))
+
+sort0: ID     (fn env => let val (sortSym, sort) = ParseLib.lookup_is (err(IDleft, IDright)) env ID
+                         in
+                             sort
+                         end)
+     | LPAREN sort RPAREN       (sort)
+     | LBRACE ID RBRACE        (fn env => let in case ID of
+                                "uninterpreted" => 
+                                    let 
+                                        val sortname = IndexSortSym.fresh "uninterpreted"
+                                    in
+                                        X.Base sortname
+                                    end
+                              | _ => (err(IDleft,IDright) "unknown {}-indexsort (known: `uninterpreted')"; raise Debug.StdExcept("", ""))
+                                          end)
+     | LBRACK sort RBRACK       (fn env => X.List (sort env))
+
+X_exp:  X_appexp              (fn env => X_unflatten (X_appexp env))
+        
+X_appexp : X_aexp          (fn env => [{item=X_aexp env,
+                           loc=toLocation X_aexpleft X_aexpright, fixity=NONE}])
+        | id         (fn env =>
+                                      let val (v,f) = X_var'n'fix env id (err(idleft, idright))
+                                      in [{item=v,
+                                           loc=toLocation idleft idright,
+                                           fixity=SOME f}]
+                                      end)
+        | X_aexp X_appexp  (fn env => {item=X_aexp env,
+                                       loc=toLocation X_aexpleft X_aexpright,
+                                       fixity=NONE}
+                            :: (X_appexp env))
+        | id X_appexp (fn env => let val (v,f) = X_var'n'fix env id (err(idleft, idright))
+                          in {item=v,
+                                loc=toLocation idleft idright,
+                                fixity=SOME f} :: (X_appexp env)
+                         end)
+
+X_aexp:  LPAREN RPAREN       (fn env => X.Tuple [])
+
+    | HASH INT LPAREN X_exp RPAREN  (fn env => X.Proj (Option.valOf (Int.fromString INT), X_exp env))
+
+    | INT                   (fn env => X.Literal(X.getIntSort(), INT))
+
+    | LPAREN X_exp RPAREN      (X_exp)
+     
+    | LPAREN X_exp_2c RPAREN      (fn env =>
+                                   case X_exp_2c of
+                                       [X_exp] => raise Option
+                                     | list => X.Tuple (Basic.mapapply list env))
+
+X_exp_2c: X_exp COMMA X_exp_2c        (X_exp :: X_exp_2c)
+    | X_exp COMMA X_exp             ([X_exp1, X_exp2])
+
+X_explist0: X_exp COMMA X_explist0        (X_exp :: X_explist0)
+    | X_exp             ([X_exp])
+
+X_explist: X_explist0     (fn env =>
+                           case X_explist0 of
+                               [X_exp] => X_exp env
+                             | exps => X.Tuple (Basic.mapapply exps env))
+
+annotationtypelist: annotationtype   (fn env =>
+                                         let val (env', anno) = annotationtype env
+                                         in
+                                             (env', [anno])
+                                         end)
+    | LPAREN annotationtypelist RPAREN  (fn env => annotationtypelist env)
+    | annotationtype DBLCOMMA annotationtypelist
+                     (fn env =>
+                         let val (env', anno) = annotationtype env
+                             val (env'', annos) = annotationtypelist env'
+                         in
+                             (env'', anno::annos)
+                         end)
+
+annotationtype: texp   (fn env =>
+                                            let val (env', A) = texp env
+                                            in
+                                                (env', AnnotationType.Type A)
+                                            end)
+
+#if 0
+    | LPAREN annotationtype RPAREN   (fn env => annotationtype env)
+#endif
+    | SOME ID COLON sort PERIOD annotationtype    (fn env =>
+                             let val sym = IndexSym.fresh ID
+                                 val env' = ParseLib.extend_iv env [(ID, (sym, X.IUVar (sort env)))]
+                                 val (_, anno) = annotationtype env'
+                             in
+                                 (env, AnnotationType.Some (sym, sort env', anno))
+                             end)
+    | ID COLON texp LEFTANNO annotationtype    (fn env =>
+                                         let val (_, A) = texp env
+                                             val (pvinfo, pv) = ParseLib.Pvar.lookup (err(IDleft, IDright)) env ID
+                                             val (_, anno) = annotationtype env
+                                    in
+                                        case pvinfo of
+                                            ParseLib.Convar => (err(IDleft, IDright) "constructors forbidden in concrete contexts";
+                                                           raise Debug.StdExcept("", ""))
+                                          | ParseLib.Ordvar _ =>
+                                                 (env, AnnotationType.LeftProgramVar (pv, A, anno))
+                                    end)
+
+#if 0
+ccelem: ID DBLCOLON sort    (fn env =>
+                             let val sym = IndexSym.fresh ID
+                                 val env = ParseLib.extend_iv env [(ID, (sym, X.IUVar (sort env)))]
+                             in
+                                 (env, CC.IndexVar(sym, sort env))
+                             end)
+ | TYVAR  (fn env =>
+              let val tv = TV.fresh TYVAR
+                  val env = ParseLib.Tyvar.extend env [(TYVAR, tv)]
+              in (env, CC.TypeVar tv)
+              end)
+ | ID COLON texp                   (fn env =>
+                                    let val (pvinfo, pv) = ParseLib.Pvar.lookup (err(IDleft, IDright)) env ID
+                                        val (_, texp') = texp env
+                                    in
+                                        case pvinfo of
+                                            ParseLib.Convar => (err(IDleft, IDright) "constructors forbidden in concrete contexts";
+                                                           raise Debug.StdExcept("", ""))
+                                          | ParseLib.Ordvar _ => (env, CC.ProgramVar(pv, texp'))
+                                    end)
+
+ccelemlist: COMMA ccelem ccelemlist   (fn env =>
+                                          let val (env, elem) = ccelem env
+                                              val (env, elems) = ccelemlist env
+                                          in
+                                              (env, elem :: elems)
+                                          end)
+  |           (fn env => (env, []))
+
+concrete_ctxt: ccelem  ccelemlist   (fn env =>
+                                     let val (env, elem) = ccelem env
+                                         val (env, elems) = ccelemlist env
+                                     in
+                                         (env, elem :: elems)
+                                     end)
+  |           (fn env => (env, []))
+
+typing: LPAREN concrete_ctxt DARROW texp RPAREN
+                     (fn env => let val (env, ccelems) = concrete_ctxt env
+                                    val (_, texp') = texp env
+                                in
+                                    (ccelems, texp')
+                                end)
+
+typinglist: DBLCOMMA typing typinglist           (fn env => (typing env) :: (typinglist env))
+  |                                        (fn env => [])
+#endif
+
+
+ctxanno: 
+#if 0
+  COLON typing typinglist            (fn env => (typing env) :: (typinglist env))
+  | 
+#endif
+COLON texp   (fn env => let val (_, texp') = texp env
+                            in
+                                 Sdml.just texp'
+                            end)
+

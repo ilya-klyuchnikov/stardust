@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# Usage:
+#   jcm2mlb foo                   # Translates foo.cm to foo.mlb
+#
+# Useful version of cm2mlb: prepends common and useful
+#  declarations to its output.
+# Since cm2mlb tends to be used by people *porting NJ code*,
+#  there is no reason for these not to be automatic; what happens if
+#  they're always included? will old SML/NJ hackers steal your silver?
+
+cat > $1.mlb << EOF
+(* Inserted by jcm2mlb: *)
+\$(MLTON_ROOT)/mlyacc-lib/mlyacc-lib.mlb
+\$(MLTON_ROOT)/basis/unsafe.mlb
+\$(MLTON_ROOT)/basis/sml-nj.mlb
+(* End lines inserted by jcm2mlb *)
+EOF
+
+cm2mlb -DMLTON $1.cm >> $1.mlb

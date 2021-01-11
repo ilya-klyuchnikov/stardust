@@ -1,0 +1,22 @@
+datatype list 'a+
+datacon nil : -all 'a- list 'a
+datacon ::  : -all 'a- 'a * list 'a -> list 'a
+
+type dyn = int / real / string    (* ICFP paper used \/ for union *)
+
+val toString : dyn -> string
+fun toString x =
+  (Int.toString ,,
+   (fn s => s : string) ,,
+   Real.toString)  x
+
+val hetListToString : list dyn -> string
+fun hetListToString xs = case xs of
+    nil   => "nil"
+  | h::t => (toString h) ^ "::"
+          ^ (hetListToString t)
+
+val _ = print "\n\n"
+val _ = print (hetListToString
+                [1, 2, "what", 3.14159, 4, "why"])
+val _ = print "\n\n\n"

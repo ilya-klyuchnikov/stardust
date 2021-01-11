@@ -1,0 +1,25 @@
+(* Newton-Raphson example from Kennedy's dissertation (p. 11). *)
+
+val newton : -all d1,d2:dim-
+  (* f, a function *)              (real[d1] -> real[d2])
+  (* f', its derivative *)       * (real[d1] -> real[(d1 ^ ~1) * d2])
+  (* x, the initial guess *)     * real[d1]
+  (* xacc, relative accuracy *)  * real
+                                -> real[d1]
+
+fun newton (f, f', x, xacc) =
+  let val dx = f x / f' x
+      val x' = x - dx
+  in
+      if abs dx / x' < xacc
+      then x'
+      else newton (f, f', x', xacc)
+  end
+
+
+val result = newton (fn x => x * x - (12345.678 * 12345.678),
+                     fn x => 2.0 * x,
+                     2350.0,
+                     0.001)
+
+val _ = print ("result = " ^ Real.toString result ^ "\n")

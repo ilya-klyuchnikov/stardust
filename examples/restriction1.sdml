@@ -1,0 +1,7 @@
+(* Example of a function that typechecks because Stardust does not
+   check code that it determines to be dead (the case arm `false => () ()') *)
+
+val f : bool[true] -> int
+fun f x = case x of true => 0 | false => ()()
+
+val _ = f true

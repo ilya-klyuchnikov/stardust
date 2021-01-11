@@ -1,0 +1,11 @@
+datatype bits
+datasort bits : odd < bits; even < bits
+datacon Empty : even
+datacon Zero : (even -> even) && (odd -> odd)
+datacon One : (even -> odd) && (odd -> even)
+
+val addOne : (odd -> even) && (even -> odd)
+fun addOne b =
+  (where b:odd do (One b) : even
+   ,,
+   where b:even do (One b) : odd)

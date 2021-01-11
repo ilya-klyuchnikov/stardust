@@ -1,0 +1,135 @@
+(* StardustML compiler
+   Copyright 2001-2013 Joshua Dunfield
+    
+   This program is free software: you can redistribute it and/or modify it under
+   the terms of the GNU General Public License as published by the Free Software
+   Foundation, either version 3 of the License, or (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful, but WITHOUT ANY
+   WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+   FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License along with this
+   program, in a file called COPYING. If not, see <http://www.gnu.org/licenses/>.
+*)
+Group 
+
+  signature SDML
+
+  signature PATTERNS
+  structure Patterns
+
+  signature SUBST
+  structure Subst
+
+  signature PRINTLIB
+  signature PRINT
+  signature PRINTSOURCEEXTRA
+  (* signature PRINTTARGET    uses PRINT signature, for now *)
+  
+  signature PARSELIB
+  structure ParseLib
+  signature SOLVE
+  signature SORTCHECK
+  signature CONTEXT
+  signature CASE
+  signature TYPECHECK
+  signature AGREEMENT
+  signature SUBTYPE
+  signature COERCION
+  signature INJECT
+  signature DESTULTIFY
+  signature LETNORMAL
+  
+  structure Parse
+  structure Print
+  structure PrintTarget
+
+  structure Sdml 
+  structure SdmlFold
+  structure Solve
+  structure Sortcheck
+  structure Context
+  structure Case
+  structure Typecheck
+  structure Agreement
+  structure Subtype
+  structure Coercion
+
+  signature RENAMING
+  structure Renaming
+
+  structure Inject
+  structure Destultify
+  structure Letnormal
+
+  signature DATASORTS
+  structure Datasorts
+
+  signature PRECEDENCE
+  structure Precedence
+
+  signature SOLVER_INTERFACE
+  signature SOLVER_INTERFACE_CVCL_PIPED
+  signature SOLVER_INTERFACE_CVC4_PIPED
+
+  structure CvclPiped
+  structure Cvc4Piped
+
+is
+#if defined(SMLNJ_VERSION)
+      (* sml/nj *)
+          $/basis.cm
+          $/smlnj-lib.cm
+          (* $c/c.cm *)  (* unused, and not present on all SML/NJ installations *)
+#if defined(MLTON)
+#else
+           $/ml-yacc-lib.cm
+#endif
+#else   (* MLton *)
+
+#endif
+
+  ../lib/sources.cm
+
+  ParseLib.sml
+  Parse.sml
+
+  PrintLib.sml
+  Print.sml
+  PrintTarget.sml
+
+#if defined(SMLNJ_VERSION)
+  Stardust.grm
+  Stardust.lex
+#else
+  Stardust.grm.sml
+  Stardust.lex.sml
+#endif
+  
+  TokenTable.sml
+  Datasorts.sml
+  Fold.sml
+  Sdml.sml
+  Subst.sml
+  Solve.sml
+  Sortcheck.sml
+  Context.sml
+  Agreement.sml
+  Coercion.sml
+  Subtype.sml
+  Case.sml
+  Typecheck.sml
+  Patterns.sml
+  Renaming.sml
+  
+  SolverInterface.sml
+  CvclPiped.sml
+  Cvc4Piped.sml
+  
+  Letnormal.sml
+  Inject.sml
+  
+  Destultify.sml
+  
+  precedence.sml
