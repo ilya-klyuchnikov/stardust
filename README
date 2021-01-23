@@ -8,6 +8,16 @@ examples might not work.  The error messages are terrible.
 
 Nonetheless, I hope you may find it of interest.
 
+BUILDING NJ-version ON MAC:
+
+- Install smlnj (`brew install smlnj`)
+- Install svc4 - https://cvc4.github.io/mac.html
+- Make this file `~/.stardustrc`:
+
+```
+sml=/usr/local/smlnj/bin/sml
+cvc4=/usr/local/bin/cvc4
+```
 
 OVERVIEW
 
@@ -31,7 +41,7 @@ Besides (roughly) the usual ML type system, it supports
   - ad hoc polymorphism (intersection (&) and union (/) types without a refinement restriction).
 
 It does not support
- 
+
   - modules;
   - fixity declarations (but does support the built-in SML infix operators, with their usual SML precedence);
   - references;
@@ -57,7 +67,7 @@ In this version of Stardust, the source syntax is substantially different from S
 most importantly, the syntax of type annotations is very different.  The syntax of types has
 also changed substantially since the PLPV '07 paper.  Finally, while Stardust has both
 "refinement" intersections like
- 
+
     (odd->even) && (odd->even)
 
 (where each part of the intersection is a refinement of the base type list->list) and
