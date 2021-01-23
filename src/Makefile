@@ -10,7 +10,7 @@
 
 all : nj mlton
 
-clean : 
+clean :
 	rm stardust-nj stardust 2> /dev/null || true
 	rm -rf .cm */.cm || true
 
@@ -22,7 +22,7 @@ sdml/Stardust.grm : sdml/Stardust.silly.grm sdml/silly
 	cd sdml && ./silly
 
 stardust-nj : sdml/Stardust.grm sources.cm
-	echo 'CM.make"sources.cm"; Jerseymain.export "stardust-nj";' | sml
+	echo 'CM.make"sources.cm"; Jerseymain.export "stardust-nj";' | /usr/local/smlnj/bin/sml
 
 stardust.prof : sdml/Stardust.grm sources.cm
 	./jcm2mlb sources
