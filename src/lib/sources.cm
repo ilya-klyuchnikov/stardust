@@ -63,13 +63,9 @@ Group
   signature INDEXING
   structure Indexing
 is
-#if defined(SMLNJ_VERSION)
-      $/basis.cm
-      $/smlnj-lib.cm
-      SillyNew.sml
-#else   (* MLton *)
-   SillyNew.sml
-#endif
+  $/basis.cm
+  $/smlnj-lib.cm
+  SillyNew.sml
   Env.sml
   Fixity.sml
   Functoritude.sml

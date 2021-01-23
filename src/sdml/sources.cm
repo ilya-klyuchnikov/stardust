@@ -1,6 +1,6 @@
 (* StardustML compiler
    Copyright 2001-2013 Joshua Dunfield
-    
+
    This program is free software: you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free Software
    Foundation, either version 3 of the License, or (at your option) any later version.
@@ -12,7 +12,7 @@
    You should have received a copy of the GNU General Public License along with this
    program, in a file called COPYING. If not, see <http://www.gnu.org/licenses/>.
 *)
-Group 
+Group
 
   signature SDML
 
@@ -26,7 +26,7 @@ Group
   signature PRINT
   signature PRINTSOURCEEXTRA
   (* signature PRINTTARGET    uses PRINT signature, for now *)
-  
+
   signature PARSELIB
   structure ParseLib
   signature SOLVE
@@ -40,12 +40,12 @@ Group
   signature INJECT
   signature DESTULTIFY
   signature LETNORMAL
-  
+
   structure Parse
   structure Print
   structure PrintTarget
 
-  structure Sdml 
+  structure Sdml
   structure SdmlFold
   structure Solve
   structure Sortcheck
@@ -77,18 +77,12 @@ Group
   structure Cvc4Piped
 
 is
-#if defined(SMLNJ_VERSION)
-      (* sml/nj *)
-          $/basis.cm
-          $/smlnj-lib.cm
-          (* $c/c.cm *)  (* unused, and not present on all SML/NJ installations *)
-#if defined(MLTON)
-#else
-           $/ml-yacc-lib.cm
-#endif
-#else   (* MLton *)
 
-#endif
+  (* sml/nj *)
+  $/basis.cm
+  $/smlnj-lib.cm
+  (* $c/c.cm *)  (* unused, and not present on all SML/NJ installations *)
+  $/ml-yacc-lib.cm
 
   ../lib/sources.cm
 
@@ -99,14 +93,9 @@ is
   Print.sml
   PrintTarget.sml
 
-#if defined(SMLNJ_VERSION)
   Stardust.grm
   Stardust.lex
-#else
-  Stardust.grm.sml
-  Stardust.lex.sml
-#endif
-  
+
   TokenTable.sml
   Datasorts.sml
   Fold.sml
@@ -122,14 +111,14 @@ is
   Typecheck.sml
   Patterns.sml
   Renaming.sml
-  
+
   SolverInterface.sml
   CvclPiped.sml
   Cvc4Piped.sml
-  
+
   Letnormal.sml
   Inject.sml
-  
+
   Destultify.sml
-  
+
   precedence.sml
