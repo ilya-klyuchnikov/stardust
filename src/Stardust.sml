@@ -1,6 +1,6 @@
 (* StardustML compiler
    Copyright 2001-2013 Joshua Dunfield
-    
+
    This program is free software: you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free Software
    Foundation, either version 3 of the License, or (at your option) any later version.
@@ -15,8 +15,10 @@
 signature STARDUST = sig
 
   val print_version : unit -> unit   (* Print version & configuration to stderr *)
-  
+
   val do_args : string list -> OS.Process.status    (* called from Mltonmain.sml, Jerseymain.sml *)
+
+  val main : (string * string list) -> OS.Process.status
 
   val top : unit -> OS.Process.status
 
@@ -27,14 +29,14 @@ end (* signature STARDUST *)
 structure Stardust :> STARDUST = struct
 
   open Driver
-    
+
   val version = "0.5"
-  
+
   val creation_time = Date.toString (Date.fromTimeLocal (Time.now()))
   val creation_host = Assoc.get (Posix.ProcEnv.uname()) "nodename"
-  
+
   fun printStderr s = TextIO.output (TextIO.stdErr, s)
-  
+
   fun print_version () =
     let in
       printStderr ("Stardust version " ^ version ^ "\n"
@@ -46,7 +48,7 @@ structure Stardust :> STARDUST = struct
 
       Stardustrc.refresh();
       printStderr (".stardustrc is " ^ (case !Stardustrc.r_last_pathname of
-                                   NONE => "??" 
+                                   NONE => "??"
                                  | SOME s => "\"" ^ s  ^ "\"")
            ^ "\n");
       printStderr ("stardustrc configuration:\n" ^ Stardustrc.toString ())
@@ -64,7 +66,7 @@ structure Stardust :> STARDUST = struct
              ^ "  (-w | --width) nnn             Set output width to nnn\n"
              ^ "  (-T | --Test) testname.test    Run test suite specified in testname.test\n"
             );
-        OS.Process.failure)      
+        OS.Process.failure)
 
   fun do_args args =
     let in
@@ -89,7 +91,7 @@ structure Stardust :> STARDUST = struct
                 (test testname; OS.Process.success)
           | "--version"::rest =>
                 (print_version(); OS.Process.success)
-  (*      | "-t"::library_file::rest => 
+  (*      | "-t"::library_file::rest =>
                 (r_library_file := library_file; do_args rest)
   *)
           | something::rest =>
@@ -99,9 +101,9 @@ structure Stardust :> STARDUST = struct
                    | _ =>
                          let in case something::rest of
                               infile::nil =>
-                                   let in 
+                                   let in
                                         (Driver.process_file infile;
-                                         OS.Process.success) 
+                                         OS.Process.success)
                                         handle e => OS.Process.failure
                                    end
 
@@ -110,12 +112,16 @@ structure Stardust :> STARDUST = struct
 
           | [] => top ()
 
-(*          | _ => 
+(*          | _ =>
                print_usage_message()
 *)
     end
 
   and top () =
-      Toplevel.run {do_args_fn = do_args}      
+      Toplevel.run {do_args_fn = do_args}
+
+  fun main (name, args) =
+      do_args args
+
 
 end (* structure Stardust *)

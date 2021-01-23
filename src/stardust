@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/usr/local/smlnj/bin/sml @SMLload=stardust.amd64-darwin $*
