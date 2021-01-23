@@ -1,6 +1,6 @@
 (* StardustML compiler
    Copyright 2001-2013 Joshua Dunfield
-    
+
    This program is free software: you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free Software
    Foundation, either version 3 of the License, or (at your option) any later version.
@@ -12,22 +12,13 @@
    You should have received a copy of the GNU General Public License along with this
    program, in a file called COPYING. If not, see <http://www.gnu.org/licenses/>.
 *)
-Group 
-is 
+Group
+is
+  $/basis.cm
   lib/sources.cm
   sdml/sources.cm
-  
-  $/basis.cm
-  
   Driver.sml
   Testspec.sml
   Toplevel.sml
   Stardust.sml
-
-#if defined(MLTON)
-    Mltonmain.sml
-#endif
-
-#if not defined(MLTON)
-    Jerseymain.sml
-#endif
+  Jerseymain.sml
