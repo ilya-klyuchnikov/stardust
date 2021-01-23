@@ -1,2 +1,5 @@
 /src/sdml/Stardust.grm.sml
 /src/sdml/Stardust.lex.sml
+/src/.cm/
+/src/lib/.cm/
+/src/sdml/.cm/
