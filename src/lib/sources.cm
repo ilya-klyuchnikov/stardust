@@ -1,6 +1,6 @@
 (* StardustML compiler
    Copyright 2001-2013 Joshua Dunfield
-    
+
    This program is free software: you can redistribute it and/or modify it under
    the terms of the GNU General Public License as published by the Free Software
    Foundation, either version 3 of the License, or (at your option) any later version.
@@ -12,7 +12,7 @@
    You should have received a copy of the GNU General Public License along with this
    program, in a file called COPYING. If not, see <http://www.gnu.org/licenses/>.
 *)
-Group 
+Group
   signature STARDUSTRC
   structure Stardustrc
 
@@ -65,10 +65,10 @@ Group
 is
 #if defined(SMLNJ_VERSION)
       $/basis.cm
-      ../nj-util/sources.cm
+      $/smlnj-lib.cm
       SillyNew.sml
 #else   (* MLton *)
-   SillyNew.sml    
+   SillyNew.sml
 #endif
   Env.sml
   Fixity.sml
