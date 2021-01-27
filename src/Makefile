@@ -1,3 +1,4 @@
+.PHONY: stardust
 stardust : sdml/Stardust.grm sources.cm
 	/usr/local/smlnj/bin/ml-build sources.cm Stardust.main stardust
 
